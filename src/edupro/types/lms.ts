@@ -380,6 +380,9 @@ export interface ActivityLog {
   details: string;
   ipAddress: string;
   timestamp: string;
+  actorName?: string;
+  target?: string;
+  role?: UserRole;
 }
 
 export interface PolicyVersion {
