@@ -125,6 +125,7 @@ export interface Batch {
   status: 'upcoming' | 'ongoing' | 'completed';
   maxCapacity: number;
   currentEnrolledCount: number;
+  code?: string;
 }
 
 export interface Enrollment {
