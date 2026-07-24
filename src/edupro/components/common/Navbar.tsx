@@ -7,16 +7,12 @@ import {
   Bell,
   Sun,
   Moon,
-  UserCheck,
   LogOut,
   ChevronDown,
   Shield,
   ShieldCheck,
   User,
   GraduationCap,
-  Sparkles,
-  Check,
-  X
 } from 'lucide-react';
 
 export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = () => {
