@@ -724,6 +724,31 @@ export const db = {
     const courses = this.getCourses().filter((c) => c.id !== courseId);
     setItem(STORAGE_KEYS.COURSES, courses);
   },
+  // Safe course deletion — returns blockers if course has dependencies
+  getCourseDependencies(courseId: string): { enrolledStudents: number; liveClasses: number; assignments: number; payments: number; total: number } {
+    const enrollments = this.getEnrollments().filter((e) => e.courseId === courseId).length;
+    const liveClasses = this.getLiveClasses().filter((l) => l.courseId === courseId).length;
+    const assignments = this.getAssignments().filter((a) => a.courseId === courseId).length;
+    const payments = this.getPayments().filter((p) => {
+      const enr = this.getEnrollments().find((e) => e.id === p.enrollmentId);
+      return enr?.courseId === courseId;
+    }).length;
+    return {
+      enrolledStudents: enrollments,
+      liveClasses,
+      assignments,
+      payments,
+      total: enrollments + liveClasses + assignments + payments,
+    };
+  },
+  deleteCourseSafely(courseId: string, actorName: string, force: boolean = false): { ok: boolean; blockers?: ReturnType<typeof db.getCourseDependencies> } {
+    const deps = this.getCourseDependencies(courseId);
+    if (deps.total > 0 && !force) return { ok: false, blockers: deps };
+    const course = this.getCourseById(courseId);
+    this.deleteCourse(courseId);
+    this.logActivity('usr-superadmin', actorName, 'super_admin', 'DELETE_COURSE', course?.title || courseId, `Deleted course. Blockers=${JSON.stringify(deps)} force=${force}`);
+    return { ok: true };
+  },
   duplicateCourse(courseId: string, actorName: string): Course | undefined {
     const original = this.getCourseById(courseId);
     if (!original) return undefined;
@@ -753,53 +778,247 @@ export const db = {
     setItem(STORAGE_KEYS.ASSIGNMENTS, assignments);
   },
 
-  // MANDATORY DEFAULT ZERO STUDENT CREATION RULE (Section 10 Requirement)
-  createDefaultStudent(studentData: Partial<StudentProfile>, courseId: string, batchId: string, actorName: string) {
+  // ========== SUPER ADMIN ACCOUNT MANAGEMENT ==========
+  changeUserPassword(userId: string, newPassword: string, actorId: string, actorName: string): boolean {
+    if (!newPassword || newPassword.length < 4) return false;
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0) return false;
+    users[idx].passwordHash = newPassword;
+    setItem(STORAGE_KEYS.USERS, users);
+    this.logActivity(actorId, actorName, 'super_admin', 'CHANGE_PASSWORD', users[idx].name, `Password updated for ${users[idx].name} (${users[idx].role})`);
+    return true;
+  },
+
+  createStudentAccount(input: {
+    fullName: string;
+    fatherName: string;
+    motherName?: string;
+    phone: string;
+    email: string;
+    password: string;
+    gender?: 'Male' | 'Female' | 'Other';
+    dob?: string;
+    address?: string;
+    photoUrl?: string;
+    courseId?: string;
+    batchId?: string;
+  }, actorId: string, actorName: string): { user: User; student: StudentProfile; enrollment?: Enrollment } {
     const count = this.getStudents().length + 1;
     const studentCode = `STU-2026-${String(count).padStart(3, '0')}`;
     const userId = `usr-stu-${Date.now()}`;
     const studentId = `stu-${Date.now()}`;
 
-    // 1. Create User
     const newUser: User = {
       id: userId,
-      name: studentData.fullName || 'New Student',
-      email: studentData.email || `student${count}@edupro.com`,
-      phone: studentData.phone || '+91 90000 00000',
+      name: input.fullName,
+      email: input.email,
+      phone: input.phone,
       role: 'student',
       status: 'active',
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
+      passwordHash: input.password,
     };
     this.saveUser(newUser);
 
-    // 2. Create Student Profile
-    const batch = this.getBatches().find((b) => b.id === batchId);
+    const batch = input.batchId ? this.getBatches().find((b) => b.id === input.batchId) : undefined;
     const newStudent: StudentProfile = {
       id: studentId,
       userId,
       studentCode,
-      fullName: studentData.fullName || 'New Student',
-      fatherName: studentData.fatherName || '',
-      motherName: studentData.motherName || '',
-      phone: studentData.phone || '',
-      whatsappPhone: studentData.whatsappPhone || studentData.phone || '',
-      email: studentData.email || '',
-      dob: studentData.dob || '',
-      gender: studentData.gender || 'Male',
-      address: studentData.address || '',
-      photoUrl: studentData.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+      fullName: input.fullName,
+      fatherName: input.fatherName,
+      motherName: input.motherName || '',
+      phone: input.phone,
+      whatsappPhone: input.phone,
+      email: input.email,
+      dob: input.dob || '',
+      gender: input.gender || 'Male',
+      address: input.address || '',
+      photoUrl: input.photoUrl || 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&q=80&w=200',
       admissionDate: new Date().toISOString().split('T')[0],
-      batchId: batchId || '',
-      batchName: batch ? batch.name : 'Unassigned Batch',
-      status: 'active'
+      batchId: batch?.id || '',
+      batchName: batch?.name || 'Unassigned',
+      status: 'active',
     };
     this.saveStudent(newStudent);
 
-    // 3. Enroll in Course with zero paid default
-    const enrollmentResult = this.enrollStudentInCourse(studentId, newStudent.fullName, courseId, batchId, 0, actorName);
+    let enrollment: Enrollment | undefined;
+    if (input.courseId && input.batchId) {
+      const res = this.enrollStudentInCourse(studentId, newStudent.fullName, input.courseId, input.batchId, 0, actorName);
+      enrollment = res.enrollment;
+    }
 
-    this.logActivity(userId, actorName, 'super_admin', 'CREATE_STUDENT_DEFAULT', studentCode, `Created student ${newStudent.fullName} with default 0 stats & assigned course.`);
+    this.logActivity(actorId, actorName, 'super_admin', 'CREATE_STUDENT', studentCode, `Created student ${newStudent.fullName} with fresh (zero) stats${enrollment ? ` + auto-enrolled in course ${enrollment.courseTitle}` : ''}.`);
+    return { user: newUser, student: newStudent, enrollment };
+  },
 
-    return { student: newStudent, user: newUser, enrollment: enrollmentResult.enrollment };
+  createTeacherAccount(input: {
+    fullName: string;
+    fatherName?: string;
+    phone: string;
+    email: string;
+    password: string;
+    designation?: string;
+    subjectSpecialization?: string;
+    monthlySalary?: number;
+    assignedCourseIds?: string[];
+    assignedBatchIds?: string[];
+  }, actorId: string, actorName: string): { user: User; teacher: TeacherProfile } {
+    const count = this.getTeachers().length + 1;
+    const employeeCode = `TCH-2026-${String(count).padStart(3, '0')}`;
+    const userId = `usr-tch-${Date.now()}`;
+    const teacherId = `tch-${Date.now()}`;
+
+    const newUser: User = {
+      id: userId,
+      name: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      role: 'teacher',
+      status: 'active',
+      createdAt: new Date().toISOString().split('T')[0],
+      passwordHash: input.password,
+    };
+    this.saveUser(newUser);
+
+    const newTeacher: TeacherProfile = {
+      id: teacherId,
+      userId,
+      employeeCode,
+      fullName: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      subjectSpecialization: input.subjectSpecialization || 'General',
+      designation: input.designation || 'Instructor',
+      joiningDate: new Date().toISOString().split('T')[0],
+      monthlySalary: input.monthlySalary ?? 0,
+      status: 'active',
+      assignedBatchIds: input.assignedBatchIds || [],
+      assignedCourseIds: input.assignedCourseIds || [],
+    };
+    this.saveTeacher(newTeacher);
+
+    this.logActivity(actorId, actorName, 'super_admin', 'CREATE_TEACHER', employeeCode, `Created teacher ${newTeacher.fullName}, assigned ${(input.assignedCourseIds || []).length} course(s).`);
+    return { user: newUser, teacher: newTeacher };
+  },
+
+  createAdminAccount(input: {
+    fullName: string;
+    phone: string;
+    email: string;
+    password: string;
+    role?: 'admin' | 'super_admin';
+  }, actorId: string, actorName: string): User {
+    const userId = `usr-adm-${Date.now()}`;
+    const newUser: User = {
+      id: userId,
+      name: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      role: input.role || 'admin',
+      status: 'active',
+      createdAt: new Date().toISOString().split('T')[0],
+      passwordHash: input.password,
+    };
+    this.saveUser(newUser);
+    this.logActivity(actorId, actorName, 'super_admin', 'CREATE_ADMIN', newUser.name, `Created ${newUser.role} account ${newUser.email}.`);
+    return newUser;
+  },
+
+  // ========== PAYMENT / FEE ADMINISTRATION ==========
+  assignCourseToStudent(studentId: string, courseId: string, batchId: string, actorName: string): Enrollment {
+    // remove existing enrollment(s) for that course so fee re-reflects cleanly
+    const existing = this.getEnrollments().filter((e) => e.studentId === studentId && e.courseId === courseId);
+    if (existing.length > 0) {
+      const remaining = this.getEnrollments().filter((e) => !(e.studentId === studentId && e.courseId === courseId));
+      setItem(STORAGE_KEYS.ENROLLMENTS, remaining);
+    }
+    const student = this.getStudents().find((s) => s.id === studentId);
+    const res = this.enrollStudentInCourse(studentId, student?.fullName || 'Student', courseId, batchId, 0, actorName);
+    return res.enrollment;
+  },
+
+  updateEnrollmentFees(
+    enrollmentId: string,
+    changes: { originalFee?: number; discountAmount?: number; finalFee?: number },
+    reason: string,
+    actorId: string,
+    actorName: string,
+  ): Enrollment | undefined {
+    const list = this.getEnrollments();
+    const enr = list.find((e) => e.id === enrollmentId);
+    if (!enr) return undefined;
+    const before = { originalFee: enr.originalFee, discountAmount: enr.discountAmount, finalFee: enr.finalFee };
+    if (changes.originalFee !== undefined) enr.originalFee = Math.max(0, changes.originalFee);
+    if (changes.discountAmount !== undefined) enr.discountAmount = Math.max(0, changes.discountAmount);
+    if (changes.finalFee !== undefined) enr.finalFee = Math.max(0, changes.finalFee);
+    else enr.finalFee = Math.max(0, enr.originalFee - enr.discountAmount);
+    setItem(STORAGE_KEYS.ENROLLMENTS, list);
+    this.logActivity(actorId, actorName, 'super_admin', 'EDIT_FEE_STRUCTURE', enr.studentName, `Fee edited (${reason}). Before=${JSON.stringify(before)} After=${JSON.stringify({ originalFee: enr.originalFee, discountAmount: enr.discountAmount, finalFee: enr.finalFee })}`);
+    return enr;
+  },
+
+  updatePayment(paymentId: string, changes: Partial<PaymentRecord>, actorId: string, actorName: string): PaymentRecord | undefined {
+    const list = this.getPayments();
+    const idx = list.findIndex((p) => p.id === paymentId);
+    if (idx < 0) return undefined;
+    // Duplicate UTR guard on transactionId change
+    if (changes.transactionId && changes.transactionId !== list[idx].transactionId && changes.transactionId !== 'N/A') {
+      const dup = list.find((p) => p.id !== paymentId && p.transactionId === changes.transactionId && p.status !== 'rejected');
+      if (dup) throw new Error(`Duplicate transaction ID: already used on receipt ${dup.receiptNumber}`);
+    }
+    const before = { ...list[idx] };
+    list[idx] = { ...list[idx], ...changes };
+    setItem(STORAGE_KEYS.PAYMENTS, list);
+    this.logActivity(actorId, actorName, 'super_admin', 'EDIT_PAYMENT', list[idx].studentName, `Payment ${list[idx].receiptNumber} edited. Amount ${before.amount}→${list[idx].amount}, UTR ${before.transactionId}→${list[idx].transactionId}.`);
+    return list[idx];
+  },
+
+  deletePayment(paymentId: string, reason: string, actorId: string, actorName: string): boolean {
+    const list = this.getPayments();
+    const target = list.find((p) => p.id === paymentId);
+    if (!target) return false;
+    const remaining = list.filter((p) => p.id !== paymentId);
+    setItem(STORAGE_KEYS.PAYMENTS, remaining);
+    this.logActivity(actorId, actorName, 'super_admin', 'DELETE_PAYMENT', target.studentName, `Deleted payment ${target.receiptNumber} amount ${target.amount}. Reason: ${reason}`);
+    return true;
+  },
+
+  checkDuplicateUtr(utr: string, excludePaymentId?: string): PaymentRecord | null {
+    if (!utr || utr === 'N/A') return null;
+    return this.getPayments().find((p) => p.id !== excludePaymentId && p.transactionId === utr && p.status !== 'rejected') || null;
+  },
+
+  savePaymentSettings(payment: NonNullable<InstituteSettings['payment']>, actorId: string, actorName: string): InstituteSettings {
+    const settings = this.getSettings();
+    const before = settings.payment;
+    settings.payment = payment;
+    setItem(STORAGE_KEYS.SETTINGS, settings);
+    this.logActivity(actorId, actorName, 'super_admin', 'UPDATE_PAYMENT_SETTINGS', 'Payment Config', `Payment UPI/config updated. Before=${JSON.stringify(before)} After=${JSON.stringify(payment)}`);
+    return settings;
+  },
+
+  // MANDATORY DEFAULT ZERO STUDENT CREATION RULE (Section 10 Requirement — legacy alias)
+  createDefaultStudent(studentData: Partial<StudentProfile>, courseId: string, batchId: string, actorName: string) {
+    return this.createStudentAccount(
+      {
+        fullName: studentData.fullName || 'New Student',
+        fatherName: studentData.fatherName || '',
+        motherName: studentData.motherName,
+        phone: studentData.phone || '',
+        email: studentData.email || '',
+        password: 'ChangeMe@123',
+        gender: studentData.gender,
+        dob: studentData.dob,
+        address: studentData.address,
+        photoUrl: studentData.photoUrl,
+        courseId,
+        batchId,
+      },
+      'usr-superadmin',
+      actorName,
+    );
   }
 };
+
