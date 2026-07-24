@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, UserRole, StudentProfile, TeacherProfile } from '../types/lms';
 import { db } from '../services/db';
+
+const STORAGE_KEY = 'lh_uid';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -15,22 +17,30 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const readStoredUid = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
-  // Default logged in user is Super Admin for easy exploring, but quick switcher lets user toggle to Student, Teacher, Admin
-  const [currentUserId, setCurrentUserId] = useState<string>('usr-superadmin');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const syncUsers = () => {
-      setUsers(db.getUsers());
-    };
+    const syncUsers = () => setUsers(db.getUsers());
     syncUsers();
     const unsubscribe = db.subscribe(syncUsers);
+    // hydrate session id from storage (client only)
+    setCurrentUserId(readStoredUid());
     return () => unsubscribe();
   }, []);
 
-  const currentUser = users.find((u) => u.id === currentUserId) || users[0] || null;
-  const currentRole = currentUser?.role || 'student';
+  const currentUser = (currentUserId && users.find((u) => u.id === currentUserId)) || null;
+  const currentRole: UserRole = currentUser?.role || 'student';
 
   const studentProfile = currentUser && currentUser.role === 'student'
     ? db.getStudentByUserId(currentUser.id) || null
@@ -42,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginAsUser = (userId: string) => {
     setCurrentUserId(userId);
+    try { window.localStorage.setItem(STORAGE_KEY, userId); } catch {}
     const u = db.getUsers().find((usr) => usr.id === userId);
     if (u) {
       db.logActivity(u.id, u.name, u.role, 'LOGIN', 'System Portal', `Logged in as ${u.name} (${u.role})`);
@@ -52,8 +63,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser) {
       db.logActivity(currentUser.id, currentUser.name, currentUser.role, 'LOGOUT', 'System Portal', 'User logged out');
     }
-    // Default fallback to student or admin
-    setCurrentUserId('usr-student-1');
+    setCurrentUserId(null);
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
   };
 
   const acceptPolicy = () => {
@@ -63,9 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUsers(db.getUsers());
   };
 
-  const refreshUserData = () => {
-    setUsers(db.getUsers());
-  };
+  const refreshUserData = () => setUsers(db.getUsers());
 
   return (
     <AuthContext.Provider
@@ -77,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginAsUser,
         logout,
         acceptPolicy,
-        refreshUserData
+        refreshUserData,
       }}
     >
       {children}
@@ -87,8 +99,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
