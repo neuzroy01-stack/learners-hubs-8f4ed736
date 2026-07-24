@@ -75,14 +75,8 @@ export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = () => {
 
       {/* Right Controls */}
       <div className="flex items-center space-x-2 sm:space-x-3">
-        {/* Quick Role Switcher Button */}
-        <button
-          onClick={() => setShowRoleSwitcher(true)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Role Switcher</span>
-        </button>
+        {/* Role Switcher removed per RBAC policy — role is derived from the authenticated session */}
+
 
         {/* Theme Toggle */}
         <button
