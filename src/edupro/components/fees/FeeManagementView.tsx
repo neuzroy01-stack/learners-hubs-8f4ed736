@@ -32,6 +32,8 @@ export const FeeManagementView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries'>('ledger');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
   const [selectedPayslip, setSelectedPayslip] = useState<StaffSalaryRecord | null>(null);
+  const [showPayFeeModal, setShowPayFeeModal] = useState(false);
+
 
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
