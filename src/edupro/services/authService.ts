@@ -1,10 +1,9 @@
 import { db } from './db';
 import type { User, UserRole } from '../types/lms';
 
-// Demo password map: real password store not part of mock data.
-// Each account uses a role-derived demo password so the login form actually validates.
-// Documented on the login pages themselves.
-const DEMO_PASSWORDS: Record<UserRole, string> = {
+// Legacy seeded accounts that don't have a stored passwordHash use this map.
+// New accounts created via the Super Admin flow always store a passwordHash on the user record.
+const LEGACY_SEED_PASSWORDS: Record<UserRole, string> = {
   super_admin: 'super123',
   admin: 'admin123',
   teacher: 'teacher123',
@@ -41,10 +40,13 @@ export const findAdminByIdentifier = (identifier: string): User | null => {
 
 export const validatePassword = (user: User, password: string): boolean => {
   if (!password) return false;
-  return password === DEMO_PASSWORDS[user.role];
+  if (user.status === 'blocked' || user.status === 'inactive') return false;
+  if (user.passwordHash && user.passwordHash.length > 0) {
+    return password === user.passwordHash;
+  }
+  // Legacy seeded accounts without a stored password fall back to the role-derived seed.
+  return password === LEGACY_SEED_PASSWORDS[user.role];
 };
-
-export const demoPasswordHintFor = (role: UserRole) => DEMO_PASSWORDS[role];
 
 export const persistSession = (userId: string) => {
   try { window.localStorage.setItem('lh_uid', userId); } catch {}

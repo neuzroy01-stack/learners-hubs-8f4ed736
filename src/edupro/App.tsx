@@ -23,6 +23,8 @@ import { LiveClassesView } from './components/live/LiveClassesView';
 import { BatchManagementView } from './components/batches/BatchManagementView';
 
 import { FeeManagementView } from './components/fees/FeeManagementView';
+import { AccountsManagementView } from './components/accounts/AccountsManagementView';
+
 import { ReportsAnalyticsView } from './components/analytics/ReportsAnalyticsView';
 import { SettingsView } from './components/settings/SettingsView';
 
@@ -59,9 +61,12 @@ const MainAppContent: React.FC = () => {
         if (currentRole === 'teacher') return <TeacherDashboard onNavigateTab={setActiveTab} />;
         return <StudentDashboard onSelectCourse={setSelectedCourseForLearning} onNavigateTab={setActiveTab} />;
 
-      case 'students':
       case 'admins_staff':
+        return <AccountsManagementView />;
+
+      case 'students':
         return <StudentList onSelectStudent={handleSelectStudentProfile} />;
+
 
       case 'courses':
       case 'my_courses':

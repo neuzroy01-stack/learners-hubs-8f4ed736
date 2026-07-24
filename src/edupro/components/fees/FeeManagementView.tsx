@@ -3,6 +3,8 @@ import { db } from '../../services/db';
 import { PaymentRecord, StaffSalaryRecord } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
 import { ReceiptModal } from '../common/ReceiptModal';
+import { PayFeeModal } from './PayFeeModal';
+
 import {
   CreditCard,
   Plus,
@@ -30,6 +32,8 @@ export const FeeManagementView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries'>('ledger');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
   const [selectedPayslip, setSelectedPayslip] = useState<StaffSalaryRecord | null>(null);
+  const [showPayFeeModal, setShowPayFeeModal] = useState(false);
+
 
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -95,16 +99,19 @@ export const FeeManagementView: React.FC = () => {
   }, [isStudent, studentProfile, students, teachers]);
 
   const openRecordPaymentModal = () => {
+    if (isStudent) {
+      setShowPayFeeModal(true);
+      return;
+    }
     setPayAmount(0);
     setPayUtr('');
     setPayRemarks('');
-    if (isStudent && studentProfile) {
-      setPayStudentId(studentProfile.id);
-    } else if (students.length > 0 && !payStudentId) {
+    if (students.length > 0 && !payStudentId) {
       setPayStudentId(students[0].id);
     }
     setShowRecordPaymentModal(true);
   };
+
 
   const openAdjustmentModal = () => {
     setAdjAmount(0);
@@ -1053,6 +1060,8 @@ export const FeeManagementView: React.FC = () => {
 
       {/* Receipt Modal */}
       <ReceiptModal payment={selectedReceipt} onClose={() => setSelectedReceipt(null)} />
+      {showPayFeeModal && <PayFeeModal onClose={() => setShowPayFeeModal(false)} />}
+
     </div>
   );
 };

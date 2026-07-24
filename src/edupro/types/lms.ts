@@ -13,7 +13,9 @@ export interface User {
   policyAccepted?: boolean;
   policyAcceptedAt?: string;
   policyAcceptedVersion?: string;
+  passwordHash?: string; // stored plain in mock db; treated as opaque credential
 }
+
 
 export interface StudentProfile {
   id: string;
@@ -393,6 +395,13 @@ export interface PolicyVersion {
   updatedBy: string;
 }
 
+export interface PaymentSettings {
+  upiId: string;
+  accountHolder: string;
+  description: string;
+  isActive: boolean;
+}
+
 export interface InstituteSettings {
   name: string;
   tagline: string;
@@ -405,7 +414,9 @@ export interface InstituteSettings {
   currencySymbol: string;
   footerText: string;
   policy: PolicyVersion;
+  payment?: PaymentSettings;
 }
+
 
 export interface SupportTicketReply {
   id: string;

@@ -1672,6 +1672,13 @@ export const INITIAL_SETTINGS: InstituteSettings = {
   primaryColor: '#2563eb',
   currencySymbol: '₹',
   footerText: '© 2026 Learner Hub LMS. All Rights Reserved. Enterprise Edition.',
+  payment: {
+    upiId: '6353504505@slc',
+    accountHolder: 'Learner Hub',
+    description: 'Course Fee Payment',
+    isActive: true,
+  },
+
   policy: {
     version: 'v2.1-2026',
     effectiveDate: '2026-01-01',
