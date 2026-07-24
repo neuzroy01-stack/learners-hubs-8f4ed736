@@ -152,9 +152,9 @@ function StudentLoginPage() {
           </form>
 
           <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="font-bold text-slate-700 dark:text-slate-300">Demo credentials · </span>
-            Phone <code>98765 11111</code> · Password <code>student123</code>
+            Trouble signing in? Contact your institute admin to reset your credentials.
           </div>
+
 
           <div className="mt-6 text-center text-xs text-slate-500 dark:text-slate-400">
             Are you Admin or Teacher?{" "}
