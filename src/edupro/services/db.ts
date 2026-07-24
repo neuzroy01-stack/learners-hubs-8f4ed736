@@ -741,7 +741,7 @@ export const db = {
       total: enrollments + liveClasses + assignments + payments,
     };
   },
-  deleteCourseSafely(courseId: string, actorName: string, force: boolean = false): { ok: boolean; blockers?: ReturnType<typeof db.getCourseDependencies> } {
+  deleteCourseSafely(courseId: string, actorName: string, force: boolean = false): { ok: boolean; blockers?: { enrolledStudents: number; liveClasses: number; assignments: number; payments: number; total: number } } {
     const deps = this.getCourseDependencies(courseId);
     if (deps.total > 0 && !force) return { ok: false, blockers: deps };
     const course = this.getCourseById(courseId);
