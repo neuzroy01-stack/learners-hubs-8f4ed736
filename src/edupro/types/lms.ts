@@ -13,7 +13,9 @@ export interface User {
   policyAccepted?: boolean;
   policyAcceptedAt?: string;
   policyAcceptedVersion?: string;
+  passwordHash?: string; // stored plain in mock db; treated as opaque credential
 }
+
 
 export interface StudentProfile {
   id: string;
