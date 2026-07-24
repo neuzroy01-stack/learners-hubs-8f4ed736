@@ -36,9 +36,9 @@ export const SettingsView: React.FC = () => {
 
   const filteredLogs = activityLogs.filter((log) => {
     const matchesSearch =
-      log.actorName.toLowerCase().includes(searchLog.toLowerCase()) ||
+      (log.actorName ?? '').toLowerCase().includes(searchLog.toLowerCase()) ||
       log.action.toLowerCase().includes(searchLog.toLowerCase()) ||
-      log.target.toLowerCase().includes(searchLog.toLowerCase()) ||
+      (log.target ?? '').toLowerCase().includes(searchLog.toLowerCase()) ||
       log.details.toLowerCase().includes(searchLog.toLowerCase());
     const matchesRole = roleFilter === 'all' || log.role === roleFilter;
     return matchesSearch && matchesRole;
