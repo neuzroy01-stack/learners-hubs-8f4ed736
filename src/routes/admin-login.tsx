@@ -152,11 +152,10 @@ function AdminLoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
-            <div><span className="font-bold text-slate-700 dark:text-slate-300">Super Admin · </span> <code>superadmin@edupro.com</code> / <code>super123</code></div>
-            <div><span className="font-bold text-slate-700 dark:text-slate-300">Admin · </span> <code>admin@edupro.com</code> / <code>admin123</code></div>
-            <div><span className="font-bold text-slate-700 dark:text-slate-300">Teacher · </span> <code>teacher.sharma@edupro.com</code> / <code>teacher123</code></div>
+          <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 text-[11px] text-slate-500 dark:text-slate-400">
+            Access is restricted to authorised institute staff. Contact the Super Admin for credential issuance or reset.
           </div>
+
 
           <div className="mt-6 text-center text-xs text-slate-500 dark:text-slate-400">
             Are you a Student?{" "}
