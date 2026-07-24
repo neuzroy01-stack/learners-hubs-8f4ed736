@@ -14,11 +14,11 @@ export const Route = createFileRoute("/")({
         content:
           "Learner Hub: enrol into mentor-led programs with live classes, recorded lectures, assignments, quizzes and industry-recognised certificates.",
       },
-      { property: "og:title", content: "Learner Hub — Enterprise Learning Platform" },
+      { property: "og:title", content: "Learner Hub — Mentor-Led Courses, Live Classes & Certificates" },
       {
         property: "og:description",
         content:
-          "Mentor-led courses, live classes, recorded lectures and certificates. Enrol today with Learner Hub.",
+          "Learner Hub: enrol into mentor-led programs with live classes, recorded lectures, assignments, quizzes and industry-recognised certificates.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

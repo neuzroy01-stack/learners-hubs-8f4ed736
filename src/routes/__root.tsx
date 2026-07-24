@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Learner Hub — Mentor-Led Courses, Live Classes & Certificates" },
+      { name: "description", content: "Learner Hub: enrol into mentor-led programs with live classes, recorded lectures, assignments, quizzes and industry-recognised certificates." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Learner Hub — Mentor-Led Courses, Live Classes & Certificates" },
+      { property: "og:description", content: "Learner Hub: enrol into mentor-led programs with live classes, recorded lectures, assignments, quizzes and industry-recognised certificates." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Learner Hub — Mentor-Led Courses, Live Classes & Certificates" },
+      { name: "twitter:description", content: "Learner Hub: enrol into mentor-led programs with live classes, recorded lectures, assignments, quizzes and industry-recognised certificates." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/87ce7743-f8c4-40db-be6b-dae8c836dd24/id-preview-9829a6b3--5c21dc2b-64d6-4998-8801-c896357f7293.lovable.app-1784866495257.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/87ce7743-f8c4-40db-be6b-dae8c836dd24/id-preview-9829a6b3--5c21dc2b-64d6-4998-8801-c896357f7293.lovable.app-1784866495257.png" },
     ],
     links: [
       {
