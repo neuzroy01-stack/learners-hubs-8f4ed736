@@ -170,56 +170,8 @@ export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = () => {
         )}
       </div>
 
-      {/* QUICK ROLE SWITCHER MODAL */}
-      {showRoleSwitcher && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Quick Demo Role Switcher</h3>
-                <p className="text-xs text-slate-500">Instantly test the LMS as Super Admin, Admin, Teacher, or Student</p>
-              </div>
-              <button
-                onClick={() => setShowRoleSwitcher(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* Role Switcher modal removed — sessions come only from Student Login / Admin Login */}
 
-            <div className="space-y-3">
-              {allUsers.map((u) => (
-                <div
-                  key={u.id}
-                  onClick={() => {
-                    loginAsUser(u.id);
-                    setShowRoleSwitcher(false);
-                  }}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                    currentUser?.id === u.id
-                      ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 shadow-sm'
-                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <img src={u.avatar} alt={u.name} className="w-10 h-10 rounded-xl object-cover" />
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 dark:text-white">{u.name}</div>
-                      <div className="text-[10px] text-slate-500">{u.email}</div>
-                      <div className="mt-1">{getRoleBadge(u.role)}</div>
-                    </div>
-                  </div>
-                  {currentUser?.id === u.id && (
-                    <div className="p-1.5 bg-blue-600 text-white rounded-lg">
-                      <Check className="w-4 h-4" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
 };
