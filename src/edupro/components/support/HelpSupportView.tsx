@@ -57,7 +57,7 @@ export const HelpSupportView: React.FC = () => {
       studentId: currentUser.id,
       studentName: currentUser.name,
       subject,
-      category,
+      category: category as SupportTicket['category'],
       message,
       priority,
       status: 'open',
