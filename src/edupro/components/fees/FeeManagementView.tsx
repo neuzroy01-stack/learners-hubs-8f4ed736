@@ -1060,6 +1060,8 @@ export const FeeManagementView: React.FC = () => {
 
       {/* Receipt Modal */}
       <ReceiptModal payment={selectedReceipt} onClose={() => setSelectedReceipt(null)} />
+      {showPayFeeModal && <PayFeeModal onClose={() => setShowPayFeeModal(false)} />}
+
     </div>
   );
 };
