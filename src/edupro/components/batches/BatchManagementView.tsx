@@ -136,7 +136,7 @@ export const BatchManagementView: React.FC = () => {
                 onClick={() => {
                   setEditingBatch(b);
                   setName(b.name);
-                  setCode(b.code);
+                  setCode(b.code ?? '');
                   setCapacity(b.maxCapacity);
                   setTeacherName(b.teacherName);
                   setShowCreateModal(true);
