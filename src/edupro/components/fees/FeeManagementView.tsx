@@ -99,16 +99,19 @@ export const FeeManagementView: React.FC = () => {
   }, [isStudent, studentProfile, students, teachers]);
 
   const openRecordPaymentModal = () => {
+    if (isStudent) {
+      setShowPayFeeModal(true);
+      return;
+    }
     setPayAmount(0);
     setPayUtr('');
     setPayRemarks('');
-    if (isStudent && studentProfile) {
-      setPayStudentId(studentProfile.id);
-    } else if (students.length > 0 && !payStudentId) {
+    if (students.length > 0 && !payStudentId) {
       setPayStudentId(students[0].id);
     }
     setShowRecordPaymentModal(true);
   };
+
 
   const openAdjustmentModal = () => {
     setAdjAmount(0);
