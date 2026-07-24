@@ -20,17 +20,14 @@ import {
 } from 'lucide-react';
 
 export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = () => {
-  const { currentUser, currentRole, loginAsUser, logout } = useAuth();
+  const { currentUser, currentRole, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const settings = db.getSettings();
   const notifications = currentUser ? db.getNotifications(currentUser.id) : [];
   const unreadCount = notifications.filter((n) => !n.isRead).length;
-
-  const allUsers = db.getUsers();
 
   const getRoleBadge = (role: string) => {
     switch (role) {
