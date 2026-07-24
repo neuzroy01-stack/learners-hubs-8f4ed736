@@ -3,6 +3,8 @@ import { db } from '../../services/db';
 import { PaymentRecord, StaffSalaryRecord } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
 import { ReceiptModal } from '../common/ReceiptModal';
+import { PayFeeModal } from './PayFeeModal';
+
 import {
   CreditCard,
   Plus,
