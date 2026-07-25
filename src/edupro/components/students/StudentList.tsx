@@ -205,7 +205,24 @@ export const StudentList: React.FC<{
         </div>
       </div>
 
+      {createdSummary && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-900 p-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-emerald-900 dark:text-emerald-200">
+              <div className="font-bold">Student account created — {createdSummary.code}</div>
+              <div className="mt-1">
+                Login phone: <span className="font-mono font-bold">{createdSummary.phone}</span> · Password: <span className="font-mono font-bold">{createdSummary.password}</span>
+              </div>
+              <div className="mt-1 opacity-80">Share these credentials with the student. Only Super Admin can change the password later.</div>
+            </div>
+          </div>
+          <button onClick={() => setCreatedSummary(null)} className="text-emerald-700 hover:text-emerald-900"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
       {/* New Student Admission Modal */}
+
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
