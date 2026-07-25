@@ -1,33 +1,33 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { StudentProfile } from '../../types/lms';
+import { useAuth } from '../../context/AuthContext';
 import {
-  GraduationCap,
   Search,
   UserPlus,
-  Filter,
-  MoreVertical,
-  CheckCircle2,
-  XCircle,
+  X,
   Eye,
-  CreditCard,
-  Mail,
-  Phone,
-  X
+  EyeOff,
+  CheckCircle2
 } from 'lucide-react';
 
 export const StudentList: React.FC<{
   onSelectStudent: (student: StudentProfile) => void;
 }> = ({ onSelectStudent }) => {
+  const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [createdSummary, setCreatedSummary] = useState<{ code: string; phone: string; password: string } | null>(null);
 
   // New Student Form State
   const [newFullName, setNewFullName] = useState('');
   const [newFatherName, setNewFatherName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [newGender, setNewGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [newCourseId, setNewCourseId] = useState('');
   const [newBatchId, setNewBatchId] = useState('');
@@ -47,41 +47,45 @@ export const StudentList: React.FC<{
     return matchesSearch && matchesStatus;
   });
 
+  const resetForm = () => {
+    setNewFullName(''); setNewFatherName(''); setNewPhone(''); setNewEmail('');
+    setNewPassword(''); setNewCourseId(''); setNewBatchId(''); setFormError(null);
+  };
+
   const handleCreateStudent = (e: React.FormEvent) => {
     e.preventDefault();
-    const course = courses.find((c) => c.id === newCourseId) || courses[0];
-    const batch = batches.find((b) => b.id === newBatchId) || batches[0];
+    setFormError(null);
 
-    const studentCode = `STU-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const userId = `usr-stu-${Date.now()}`;
+    const phoneDigits = newPhone.replace(/[^0-9]/g, '');
+    if (phoneDigits.length < 6) { setFormError('Enter a valid phone number (min 6 digits).'); return; }
+    if (!newPassword || newPassword.length < 4) { setFormError('Password must be at least 4 characters.'); return; }
 
-    const newStudent: StudentProfile = {
-      id: `stu-${Date.now()}`,
-      userId,
-      studentCode,
-      fullName: newFullName,
-      fatherName: newFatherName,
-      motherName: 'N/A',
-      phone: newPhone,
-      whatsappPhone: newPhone,
-      email: newEmail,
-      dob: '2002-06-15',
-      gender: newGender,
-      address: 'Bengaluru, Karnataka',
-      photoUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
-      admissionDate: new Date().toISOString().split('T')[0],
-      batchId: batch.id,
-      batchName: batch.name,
-      status: 'active'
-    };
+    // Prevent duplicate phone (users are looked up by phone at login)
+    const existing = db.getUsers().find((u) => u.phone.replace(/[^0-9]/g, '') === phoneDigits);
+    if (existing) { setFormError(`Phone already used by ${existing.name}. Choose a different number.`); return; }
 
-    db.saveStudent(newStudent);
-    db.enrollStudentInCourse(newStudent.id, newStudent.fullName, course.id, batch.id, 2000, 'Marcus Sterling (Admin)');
+    try {
+      const { student } = db.createStudentAccount(
+        {
+          fullName: newFullName.trim(),
+          fatherName: newFatherName.trim(),
+          phone: newPhone.trim(),
+          email: newEmail.trim(),
+          password: newPassword,
+          gender: newGender,
+          courseId: newCourseId || undefined,
+          batchId: newBatchId || undefined,
+        },
+        currentUser?.id || 'usr-superadmin',
+        currentUser?.name || 'Super Admin',
+      );
 
-    setShowAddModal(false);
-    setNewFullName('');
-    setNewPhone('');
-    setNewEmail('');
+      setCreatedSummary({ code: student.studentCode, phone: student.phone, password: newPassword });
+      setShowAddModal(false);
+      resetForm();
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to create student account.');
+    }
   };
 
   const handleToggleBlock = (s: StudentProfile) => {
