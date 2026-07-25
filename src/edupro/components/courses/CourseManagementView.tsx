@@ -276,27 +276,25 @@ export const CourseManagementView: React.FC = () => {
             {/* Modal Body Tabs */}
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
               <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('details')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
-                    activeTab === 'details' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  General Details & Pricing
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('modules')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
-                    activeTab === 'modules' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Modules & Recorded Lectures ({editingCourse.modules.length})
-                </button>
+                {([
+                  ['details', 'General & Media'],
+                  ['modules', `Modules & Lessons (${editingCourse.modules.length})`],
+                  ['weeks', `Weekly Roadmap (${editingCourse.weeks?.length || 0})`],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveTab(key)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                      activeTab === key ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
-              {activeTab === 'details' ? (
+              {activeTab === 'details' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Course Code</label>
@@ -307,7 +305,6 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-
                   <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Course Title</label>
                     <input
@@ -317,7 +314,6 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-
                   <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Fee Amount ({settings.currencySymbol})</label>
                     <input
@@ -327,7 +323,6 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
                     />
                   </div>
-
                   <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Duration (Months)</label>
                     <input
@@ -337,8 +332,16 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-
-                  <div className="sm:col-span-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Category</label>
+                    <input
+                      type="text"
+                      value={editingCourse.category}
+                      onChange={(e) => setEditingCourse({ ...editingCourse, category: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Instructor Name</label>
                     <input
                       type="text"
@@ -347,7 +350,24 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Thumbnail URL</label>
+                    <input
+                      type="url"
+                      value={editingCourse.thumbnail}
+                      onChange={(e) => setEditingCourse({ ...editingCourse, thumbnail: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Banner URL</label>
+                    <input
+                      type="url"
+                      value={editingCourse.banner || ''}
+                      onChange={(e) => setEditingCourse({ ...editingCourse, banner: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
                   <div className="sm:col-span-2">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Description</label>
                     <textarea
@@ -358,10 +378,12 @@ export const CourseManagementView: React.FC = () => {
                     />
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {activeTab === 'modules' && (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Module List</h4>
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Modules & Lessons</h4>
                     <button
                       type="button"
                       onClick={() => {
@@ -369,40 +391,243 @@ export const CourseManagementView: React.FC = () => {
                           id: `mod-${Date.now()}`,
                           courseId: editingCourse.id,
                           title: `Module ${editingCourse.modules.length + 1}: New Topic`,
-                          description: 'Module detailed description and learning objectives.',
+                          description: 'Module description',
                           order: editingCourse.modules.length + 1,
                           lessons: []
                         };
-                        setEditingCourse({
-                          ...editingCourse,
-                          modules: [...editingCourse.modules, newMod]
-                        });
+                        setEditingCourse({ ...editingCourse, modules: [...editingCourse.modules, newMod] });
                       }}
                       className="text-xs font-bold text-blue-600 hover:underline flex items-center space-x-1"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Module</span>
+                      <Plus className="w-3.5 h-3.5" /><span>Add Module</span>
                     </button>
                   </div>
 
                   {editingCourse.modules.map((mod, mIdx) => (
                     <div key={mod.id} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <input
                           type="text"
                           value={mod.title}
                           onChange={(e) => {
-                            const updatedMods = [...editingCourse.modules];
-                            updatedMods[mIdx].title = e.target.value;
-                            setEditingCourse({ ...editingCourse, modules: updatedMods });
+                            const updated = [...editingCourse.modules];
+                            updated[mIdx] = { ...updated[mIdx], title: e.target.value };
+                            setEditingCourse({ ...editingCourse, modules: updated });
                           }}
-                          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs font-bold text-slate-900 dark:text-white w-2/3"
+                          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs font-bold text-slate-900 dark:text-white flex-1"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            const updatedMods = editingCourse.modules.filter((_, idx) => idx !== mIdx);
-                            setEditingCourse({ ...editingCourse, modules: updatedMods });
+                            if (!confirm(`Delete module "${mod.title}" and all its lessons?`)) return;
+                            setEditingCourse({ ...editingCourse, modules: editingCourse.modules.filter((_, idx) => idx !== mIdx) });
+                          }}
+                          className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
+                          title="Delete module"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <textarea
+                        rows={2}
+                        value={mod.description}
+                        onChange={(e) => {
+                          const updated = [...editingCourse.modules];
+                          updated[mIdx] = { ...updated[mIdx], description: e.target.value };
+                          setEditingCourse({ ...editingCourse, modules: updated });
+                        }}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-[11px] text-slate-700 dark:text-slate-300"
+                        placeholder="Module description..."
+                      />
+
+                      <div className="space-y-2 pl-2 border-l-2 border-blue-500">
+                        {mod.lessons.map((les, lIdx) => (
+                          <div key={les.id} className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="text"
+                                value={les.title}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, title: e.target.value };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs font-bold text-slate-900 dark:text-white flex-1"
+                                placeholder="Lesson title"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons = updated[mIdx].lessons.filter((_, i) => i !== lIdx);
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                className="p-1 text-rose-500 hover:bg-rose-50 rounded-md"
+                                title="Delete lesson"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-12 gap-2">
+                              <input
+                                type="url"
+                                value={les.videoUrl}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, videoUrl: e.target.value };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                placeholder="Video URL (YouTube / MP4 / Embed / Live)"
+                                className="col-span-7 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] font-mono text-slate-800 dark:text-slate-200"
+                              />
+                              <select
+                                value={les.videoType}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, videoType: e.target.value as Lesson['videoType'] };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                className="col-span-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-200"
+                              >
+                                <option value="youtube">YouTube</option>
+                                <option value="mp4">MP4</option>
+                                <option value="embed">Embed / Live</option>
+                              </select>
+                              <input
+                                type="number"
+                                value={les.durationMinutes}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, durationMinutes: Number(e.target.value) };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                placeholder="Min"
+                                className="col-span-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] font-bold text-center text-slate-800 dark:text-slate-200"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-12 gap-2">
+                              <input
+                                type="url"
+                                value={les.attachmentUrl || ''}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, attachmentUrl: e.target.value };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                placeholder="Attachment / PDF URL (optional)"
+                                className="col-span-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] font-mono text-slate-800 dark:text-slate-200"
+                              />
+                              <input
+                                type="text"
+                                value={les.attachmentName || ''}
+                                onChange={(e) => {
+                                  const updated = [...editingCourse.modules];
+                                  updated[mIdx].lessons[lIdx] = { ...les, attachmentName: e.target.value };
+                                  setEditingCourse({ ...editingCourse, modules: updated });
+                                }}
+                                placeholder="Attachment label"
+                                className="col-span-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] text-slate-800 dark:text-slate-200"
+                              />
+                            </div>
+
+                            <textarea
+                              rows={2}
+                              value={les.description}
+                              onChange={(e) => {
+                                const updated = [...editingCourse.modules];
+                                updated[mIdx].lessons[lIdx] = { ...les, description: e.target.value };
+                                setEditingCourse({ ...editingCourse, modules: updated });
+                              }}
+                              placeholder="Lesson description / notes"
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] text-slate-700 dark:text-slate-300"
+                            />
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newLesson: Lesson = {
+                              id: `les-${Date.now()}`,
+                              moduleId: mod.id,
+                              title: `Lesson ${mod.lessons.length + 1}`,
+                              description: '',
+                              videoUrl: '',
+                              videoType: 'youtube',
+                              durationMinutes: 30,
+                              order: mod.lessons.length + 1
+                            };
+                            const updated = [...editingCourse.modules];
+                            updated[mIdx] = { ...mod, lessons: [...mod.lessons, newLesson] };
+                            setEditingCourse({ ...editingCourse, modules: updated });
+                          }}
+                          className="text-[11px] font-bold text-indigo-500 hover:underline flex items-center space-x-1 pt-1"
+                        >
+                          <Plus className="w-3 h-3" /><span>Add Lesson</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeTab === 'weeks' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Weekly Roadmap</h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const weeks = editingCourse.weeks || [];
+                        const newWeek: RoadmapWeek = {
+                          id: `wk-${Date.now()}`,
+                          weekNumber: weeks.length + 1,
+                          title: `Week ${weeks.length + 1}`,
+                          description: '',
+                          topics: []
+                        };
+                        setEditingCourse({ ...editingCourse, weeks: [...weeks, newWeek] });
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:underline flex items-center space-x-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /><span>Add Week</span>
+                    </button>
+                  </div>
+
+                  {(editingCourse.weeks || []).map((wk, wIdx) => (
+                    <div key={wk.id} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 grid grid-cols-6 gap-2">
+                          <input
+                            type="number"
+                            value={wk.weekNumber}
+                            onChange={(e) => {
+                              const updated = [...(editingCourse.weeks || [])];
+                              updated[wIdx] = { ...wk, weekNumber: Number(e.target.value) };
+                              setEditingCourse({ ...editingCourse, weeks: updated });
+                            }}
+                            className="col-span-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs font-bold text-center"
+                          />
+                          <input
+                            type="text"
+                            value={wk.title}
+                            onChange={(e) => {
+                              const updated = [...(editingCourse.weeks || [])];
+                              updated[wIdx] = { ...wk, title: e.target.value };
+                              setEditingCourse({ ...editingCourse, weeks: updated });
+                            }}
+                            className="col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-xs font-bold text-slate-900 dark:text-white"
+                            placeholder="Week title"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!confirm(`Delete Week ${wk.weekNumber}?`)) return;
+                            setEditingCourse({ ...editingCourse, weeks: (editingCourse.weeks || []).filter((_, i) => i !== wIdx) });
                           }}
                           className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
                         >
@@ -410,40 +635,89 @@ export const CourseManagementView: React.FC = () => {
                         </button>
                       </div>
 
-                      <div className="space-y-2 pl-2 border-l-2 border-blue-500">
-                        {mod.lessons.map((les, lIdx) => (
-                          <div key={les.id} className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">{les.title}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">{les.durationMinutes} min</span>
+                      <textarea
+                        rows={2}
+                        value={wk.description}
+                        onChange={(e) => {
+                          const updated = [...(editingCourse.weeks || [])];
+                          updated[wIdx] = { ...wk, description: e.target.value };
+                          setEditingCourse({ ...editingCourse, weeks: updated });
+                        }}
+                        placeholder="Week summary / learning objectives"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-[11px]"
+                      />
+
+                      <div className="space-y-2 pl-2 border-l-2 border-emerald-500">
+                        {wk.topics.map((tp, tIdx) => (
+                          <div key={tp.id} className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 grid grid-cols-12 gap-2 items-center">
+                            <input
+                              type="number"
+                              value={tp.dayNumber}
+                              onChange={(e) => {
+                                const updated = [...(editingCourse.weeks || [])];
+                                updated[wIdx].topics[tIdx] = { ...tp, dayNumber: Number(e.target.value) };
+                                setEditingCourse({ ...editingCourse, weeks: updated });
+                              }}
+                              className="col-span-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1 text-[11px] font-bold text-center"
+                            />
+                            <input
+                              type="text"
+                              value={tp.title}
+                              onChange={(e) => {
+                                const updated = [...(editingCourse.weeks || [])];
+                                updated[wIdx].topics[tIdx] = { ...tp, title: e.target.value };
+                                setEditingCourse({ ...editingCourse, weeks: updated });
+                              }}
+                              className="col-span-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1 text-[11px] font-bold"
+                              placeholder="Topic title"
+                            />
+                            <input
+                              type="text"
+                              value={tp.description}
+                              onChange={(e) => {
+                                const updated = [...(editingCourse.weeks || [])];
+                                updated[wIdx].topics[tIdx] = { ...tp, description: e.target.value };
+                                setEditingCourse({ ...editingCourse, weeks: updated });
+                              }}
+                              className="col-span-6 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1 text-[11px]"
+                              placeholder="Description"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(editingCourse.weeks || [])];
+                                updated[wIdx].topics = updated[wIdx].topics.filter((_, i) => i !== tIdx);
+                                setEditingCourse({ ...editingCourse, weeks: updated });
+                              }}
+                              className="col-span-1 p-1 text-rose-500 hover:bg-rose-50 rounded-md justify-self-end"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         ))}
                         <button
                           type="button"
                           onClick={() => {
-                            const newLesson: Lesson = {
-                              id: `les-${Date.now()}`,
-                              moduleId: mod.id,
-                              title: `Lesson ${mod.lessons.length + 1}: Live Session Recording`,
-                              description: 'Detailed lesson explanation',
-                              videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-                              videoType: 'youtube',
-                              durationMinutes: 35,
-                              order: mod.lessons.length + 1
+                            const updated = [...(editingCourse.weeks || [])];
+                            const newTopic: RoadmapTopic = {
+                              id: `tp-${Date.now()}`,
+                              title: 'New topic',
+                              description: '',
+                              dayNumber: wk.topics.length + 1,
                             };
-                            const updatedMods = [...editingCourse.modules];
-                            updatedMods[mIdx].lessons.push(newLesson);
-                            setEditingCourse({ ...editingCourse, modules: updatedMods });
+                            updated[wIdx] = { ...wk, topics: [...wk.topics, newTopic] };
+                            setEditingCourse({ ...editingCourse, weeks: updated });
                           }}
-                          className="text-[11px] font-bold text-indigo-500 hover:underline flex items-center space-x-1 pt-1"
+                          className="text-[11px] font-bold text-emerald-600 hover:underline flex items-center space-x-1 pt-1"
                         >
-                          <Plus className="w-3 h-3" />
-                          <span>Add Lesson to Module</span>
+                          <Plus className="w-3 h-3" /><span>Add Topic / Day</span>
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+
             </div>
 
             {/* Modal Footer */}

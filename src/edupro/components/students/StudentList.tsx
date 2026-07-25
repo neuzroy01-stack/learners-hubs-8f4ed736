@@ -1,33 +1,33 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
 import { StudentProfile } from '../../types/lms';
+import { useAuth } from '../../context/AuthContext';
 import {
-  GraduationCap,
   Search,
   UserPlus,
-  Filter,
-  MoreVertical,
-  CheckCircle2,
-  XCircle,
+  X,
   Eye,
-  CreditCard,
-  Mail,
-  Phone,
-  X
+  EyeOff,
+  CheckCircle2
 } from 'lucide-react';
 
 export const StudentList: React.FC<{
   onSelectStudent: (student: StudentProfile) => void;
 }> = ({ onSelectStudent }) => {
+  const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [createdSummary, setCreatedSummary] = useState<{ code: string; phone: string; password: string } | null>(null);
 
   // New Student Form State
   const [newFullName, setNewFullName] = useState('');
   const [newFatherName, setNewFatherName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [newGender, setNewGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [newCourseId, setNewCourseId] = useState('');
   const [newBatchId, setNewBatchId] = useState('');
@@ -47,41 +47,45 @@ export const StudentList: React.FC<{
     return matchesSearch && matchesStatus;
   });
 
+  const resetForm = () => {
+    setNewFullName(''); setNewFatherName(''); setNewPhone(''); setNewEmail('');
+    setNewPassword(''); setNewCourseId(''); setNewBatchId(''); setFormError(null);
+  };
+
   const handleCreateStudent = (e: React.FormEvent) => {
     e.preventDefault();
-    const course = courses.find((c) => c.id === newCourseId) || courses[0];
-    const batch = batches.find((b) => b.id === newBatchId) || batches[0];
+    setFormError(null);
 
-    const studentCode = `STU-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const userId = `usr-stu-${Date.now()}`;
+    const phoneDigits = newPhone.replace(/[^0-9]/g, '');
+    if (phoneDigits.length < 6) { setFormError('Enter a valid phone number (min 6 digits).'); return; }
+    if (!newPassword || newPassword.length < 4) { setFormError('Password must be at least 4 characters.'); return; }
 
-    const newStudent: StudentProfile = {
-      id: `stu-${Date.now()}`,
-      userId,
-      studentCode,
-      fullName: newFullName,
-      fatherName: newFatherName,
-      motherName: 'N/A',
-      phone: newPhone,
-      whatsappPhone: newPhone,
-      email: newEmail,
-      dob: '2002-06-15',
-      gender: newGender,
-      address: 'Bengaluru, Karnataka',
-      photoUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
-      admissionDate: new Date().toISOString().split('T')[0],
-      batchId: batch.id,
-      batchName: batch.name,
-      status: 'active'
-    };
+    // Prevent duplicate phone (users are looked up by phone at login)
+    const existing = db.getUsers().find((u) => u.phone.replace(/[^0-9]/g, '') === phoneDigits);
+    if (existing) { setFormError(`Phone already used by ${existing.name}. Choose a different number.`); return; }
 
-    db.saveStudent(newStudent);
-    db.enrollStudentInCourse(newStudent.id, newStudent.fullName, course.id, batch.id, 2000, 'Marcus Sterling (Admin)');
+    try {
+      const { student } = db.createStudentAccount(
+        {
+          fullName: newFullName.trim(),
+          fatherName: newFatherName.trim(),
+          phone: newPhone.trim(),
+          email: newEmail.trim(),
+          password: newPassword,
+          gender: newGender,
+          courseId: newCourseId || undefined,
+          batchId: newBatchId || undefined,
+        },
+        currentUser?.id || 'usr-superadmin',
+        currentUser?.name || 'Super Admin',
+      );
 
-    setShowAddModal(false);
-    setNewFullName('');
-    setNewPhone('');
-    setNewEmail('');
+      setCreatedSummary({ code: student.studentCode, phone: student.phone, password: newPassword });
+      setShowAddModal(false);
+      resetForm();
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to create student account.');
+    }
   };
 
   const handleToggleBlock = (s: StudentProfile) => {
@@ -201,7 +205,24 @@ export const StudentList: React.FC<{
         </div>
       </div>
 
+      {createdSummary && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-900 p-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-emerald-900 dark:text-emerald-200">
+              <div className="font-bold">Student account created — {createdSummary.code}</div>
+              <div className="mt-1">
+                Login phone: <span className="font-mono font-bold">{createdSummary.phone}</span> · Password: <span className="font-mono font-bold">{createdSummary.password}</span>
+              </div>
+              <div className="mt-1 opacity-80">Share these credentials with the student. Only Super Admin can change the password later.</div>
+            </div>
+          </div>
+          <button onClick={() => setCreatedSummary(null)} className="text-emerald-700 hover:text-emerald-900"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
       {/* New Student Admission Modal */}
+
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
@@ -265,12 +286,42 @@ export const StudentList: React.FC<{
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Course</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password (Super Admin sets)</label>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min 4 characters"
+                      className="w-full p-2.5 pr-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                      required
+                    />
+                    <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Gender</label>
+                  <select
+                    value={newGender}
+                    onChange={(e) => setNewGender(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                  >
+                    <option>Male</option><option>Female</option><option>Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Course (optional)</label>
                   <select
                     value={newCourseId}
                     onChange={(e) => setNewCourseId(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
                   >
+                    <option value="">— None —</option>
                     {courses.map((c) => (
                       <option key={c.id} value={c.id}>{c.title} ({settings.currencySymbol}{c.feeAmount.toLocaleString()})</option>
                     ))}
@@ -278,18 +329,26 @@ export const StudentList: React.FC<{
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Batch</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Batch (optional)</label>
                   <select
                     value={newBatchId}
                     onChange={(e) => setNewBatchId(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
                   >
+                    <option value="">— None —</option>
                     {batches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
+
+              {formError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/40 dark:border-rose-900 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-300">
+                  {formError}
+                </div>
+              )}
+
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
