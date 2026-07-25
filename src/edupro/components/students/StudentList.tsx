@@ -269,12 +269,42 @@ export const StudentList: React.FC<{
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Course</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password (Super Admin sets)</label>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min 4 characters"
+                      className="w-full p-2.5 pr-9 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                      required
+                    />
+                    <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Gender</label>
+                  <select
+                    value={newGender}
+                    onChange={(e) => setNewGender(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                  >
+                    <option>Male</option><option>Female</option><option>Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Course (optional)</label>
                   <select
                     value={newCourseId}
                     onChange={(e) => setNewCourseId(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
                   >
+                    <option value="">— None —</option>
                     {courses.map((c) => (
                       <option key={c.id} value={c.id}>{c.title} ({settings.currencySymbol}{c.feeAmount.toLocaleString()})</option>
                     ))}
@@ -282,18 +312,26 @@ export const StudentList: React.FC<{
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Batch</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Assign Batch (optional)</label>
                   <select
                     value={newBatchId}
                     onChange={(e) => setNewBatchId(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
                   >
+                    <option value="">— None —</option>
                     {batches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
+
+              {formError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/40 dark:border-rose-900 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-300">
+                  {formError}
+                </div>
+              )}
+
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
