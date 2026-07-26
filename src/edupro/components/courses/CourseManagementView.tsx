@@ -350,11 +350,20 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Thumbnail URL</label>
+                  <div className="sm:col-span-2 space-y-2 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+                    <ImageUploader
+                      label="Course Thumbnail"
+                      shape="wide"
+                      hint="JPG, PNG or WEBP · max 2 MB · auto-optimised"
+                      value={editingCourse.thumbnail}
+                      onChange={(dataUrl) => setEditingCourse({ ...editingCourse, thumbnail: dataUrl })}
+                      onRemove={() => setEditingCourse({ ...editingCourse, thumbnail: '' })}
+                    />
+                    <label className="mt-1 block text-[11px] font-bold text-slate-600 dark:text-slate-400">…or paste a thumbnail URL</label>
                     <input
                       type="url"
-                      value={editingCourse.thumbnail}
+                      value={editingCourse.thumbnail?.startsWith('data:') ? '' : editingCourse.thumbnail}
+                      placeholder="https://..."
                       onChange={(e) => setEditingCourse({ ...editingCourse, thumbnail: e.target.value })}
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
