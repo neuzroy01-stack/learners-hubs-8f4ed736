@@ -34,6 +34,7 @@ import { db } from './services/db';
 const MainAppContent: React.FC = () => {
   const { currentRole, currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [selectedCourseForLearning, setSelectedCourseForLearning] = useState<Course | null>(null);
 
   const handleSelectStudentProfile = (student: StudentProfile) => {
