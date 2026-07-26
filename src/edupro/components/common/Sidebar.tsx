@@ -18,15 +18,18 @@ import {
   DollarSign,
   HelpCircle,
   Radio,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X
 } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobileOpen = false, onCloseMobile }) => {
   const { currentRole } = useAuth();
 
   const getMenuItems = () => {
