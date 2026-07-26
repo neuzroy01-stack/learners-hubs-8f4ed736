@@ -164,9 +164,11 @@ const MainAppContent: React.FC = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <MainAppContent />
-      </AuthProvider>
+      <FeedbackProvider>
+        <AuthProvider>
+          <MainAppContent />
+        </AuthProvider>
+      </FeedbackProvider>
     </ThemeProvider>
   );
 }
