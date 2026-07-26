@@ -765,6 +765,298 @@ export const FeeManagementView: React.FC = () => {
         </div>
       )}
 
+      {/* Date-wise Transaction History (Fees + Salaries) */}
+      {activeTab === 'history' && isAdmin && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">From date</label>
+              <input
+                type="date"
+                value={historyFrom}
+                onChange={(e) => setHistoryFrom(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">To date</label>
+              <input
+                type="date"
+                value={historyTo}
+                onChange={(e) => setHistoryTo(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">Search name / receipt / UTR</label>
+              <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 dark:border-slate-700 dark:bg-slate-800">
+                <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <input
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                  placeholder="Type to filter transactions..."
+                  className="w-full bg-transparent py-2 text-xs text-slate-900 focus:outline-none dark:text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {(() => {
+            const rows = [
+              ...payments.map((p) => ({
+                id: p.id,
+                date: p.paymentDate,
+                kind: 'Fee Collection',
+                party: p.studentName,
+                ref: `${p.receiptNumber} · ${p.transactionId}`,
+                amount: p.amount,
+                direction: 'in' as const,
+                status: p.status.replace('_', ' ')
+              })),
+              ...salaries.map((s) => ({
+                id: s.id,
+                date: s.paymentDate || s.monthYear,
+                kind: 'Salary Disbursal',
+                party: s.teacherName,
+                ref: `${s.monthYear} · ${s.transactionId || 'N/A'}`,
+                amount: s.paidAmount,
+                direction: 'out' as const,
+                status: s.status
+              }))
+            ]
+              .filter((r) => {
+                if (historyFrom && r.date < historyFrom) return false;
+                if (historyTo && r.date > historyTo) return false;
+                if (historyQuery) {
+                  const q = historyQuery.toLowerCase();
+                  return `${r.party} ${r.ref} ${r.kind}`.toLowerCase().includes(q);
+                }
+                return true;
+              })
+              .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+            const inflow = rows.filter((r) => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
+            const outflow = rows.filter((r) => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
+
+            return (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:grid-cols-3">
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Transactions</div>
+                    <div className="text-lg font-black text-slate-900 dark:text-white">{rows.length}</div>
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Fee Inflow</div>
+                    <div className="text-lg font-black text-emerald-600">{settings.currencySymbol}{inflow.toLocaleString()}</div>
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Salary Outflow</div>
+                    <div className="text-lg font-black text-rose-600">{settings.currencySymbol}{outflow.toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
+                      <tr>
+                        <th className="p-3.5">Date</th>
+                        <th className="p-3.5">Type</th>
+                        <th className="p-3.5">Party</th>
+                        <th className="p-3.5">Reference</th>
+                        <th className="p-3.5">Amount</th>
+                        <th className="p-3.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-slate-400">No transactions in this date range.</td>
+                        </tr>
+                      ) : (
+                        rows.map((r) => (
+                          <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                            <td className="p-3.5 font-mono text-slate-500">{r.date}</td>
+                            <td className="p-3.5 font-bold text-slate-900 dark:text-white">{r.kind}</td>
+                            <td className="p-3.5 text-slate-600 dark:text-slate-300">{r.party}</td>
+                            <td className="p-3.5 font-mono text-[10px] text-slate-500">{r.ref}</td>
+                            <td className={`p-3.5 font-mono font-bold ${r.direction === 'in' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {r.direction === 'in' ? '+' : '−'}{settings.currencySymbol}{r.amount.toLocaleString()}
+                            </td>
+                            <td className="p-3.5 capitalize text-slate-500">{r.status}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Super Admin — Edit Payment Modal */}
+      {editPayment && isSuperAdmin && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSavePaymentEdit}
+            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Payment · {editPayment.receiptNumber}</h3>
+              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Amount</label>
+                <input
+                  type="number"
+                  value={editPayment.amount}
+                  onChange={(e) => setEditPayment({ ...editPayment, amount: Number(e.target.value) })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment date</label>
+                <input
+                  type="date"
+                  value={editPayment.paymentDate}
+                  onChange={(e) => setEditPayment({ ...editPayment, paymentDate: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Mode</label>
+                <select
+                  value={editPayment.paymentMode}
+                  onChange={(e) => setEditPayment({ ...editPayment, paymentMode: e.target.value as PaymentRecord['paymentMode'] })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  {['Cash', 'UPI', 'Net Banking', 'Credit Card', 'Cheque'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Status</label>
+                <select
+                  value={editPayment.status}
+                  onChange={(e) => setEditPayment({ ...editPayment, status: e.target.value as PaymentRecord['status'] })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="approved">Approved</option>
+                  <option value="pending_verification">Pending verification</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction / UTR</label>
+                <input
+                  value={editPayment.transactionId}
+                  onChange={(e) => setEditPayment({ ...editPayment, transactionId: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
+                <input
+                  value={editPayment.remarks || ''}
+                  onChange={(e) => setEditPayment({ ...editPayment, remarks: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button type="submit" className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Super Admin — Edit Salary Modal */}
+      {editSalary && isSuperAdmin && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSaveSalaryEdit}
+            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Salary · {editSalary.teacherName}</h3>
+              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Month &amp; Year</label>
+                <input
+                  value={editSalary.monthYear}
+                  onChange={(e) => setEditSalary({ ...editSalary, monthYear: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              {([
+                ['baseSalary', 'Base salary'],
+                ['bonus', 'Bonus'],
+                ['deductions', 'Deductions'],
+                ['paidAmount', 'Paid amount']
+              ] as const).map(([field, label]) => (
+                <div key={field}>
+                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">{label}</label>
+                  <input
+                    type="number"
+                    value={editSalary[field]}
+                    onChange={(e) => setEditSalary({ ...editSalary, [field]: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              ))}
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction reference</label>
+                <input
+                  value={editSalary.transactionId || ''}
+                  onChange={(e) => setEditSalary({ ...editSalary, transactionId: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
+                <input
+                  value={editSalary.remarks || ''}
+                  onChange={(e) => setEditSalary({ ...editSalary, remarks: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <p className="rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-500 dark:bg-slate-800/60">
+              Net salary recalculates automatically as base + bonus − deductions, and the status updates from the paid amount.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button type="submit" className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white hover:bg-indigo-700">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+
+
       {/* Record Payment Modal */}
       {showRecordPaymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
