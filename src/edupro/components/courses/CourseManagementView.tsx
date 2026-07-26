@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/db';
 import { Course, CourseModule, Lesson, RoadmapWeek, RoadmapTopic } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
+import { ImageUploader } from '../common/ImageUploader';
+import { LessonVideoMeta } from './LessonVideoMeta';
+import { useFeedback } from '../common/Feedback';
 import {
   BookOpen,
   Plus,
