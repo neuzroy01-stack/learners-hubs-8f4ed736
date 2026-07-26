@@ -451,8 +451,9 @@ export const CourseManagementView: React.FC = () => {
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!confirm(`Delete module "${mod.title}" and all its lessons?`)) return;
+                          onClick={async () => {
+                            const res = await confirm({ title: 'Delete module?', message: `"${mod.title}" and all its lessons will be removed from this course.`, confirmLabel: 'Delete module' });
+                            if (!res.ok) return;
                             setEditingCourse({ ...editingCourse, modules: editingCourse.modules.filter((_, idx) => idx !== mIdx) });
                           }}
                           className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
@@ -667,8 +668,9 @@ export const CourseManagementView: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!confirm(`Delete Week ${wk.weekNumber}?`)) return;
+                          onClick={async () => {
+                            const res = await confirm({ title: `Delete Week ${wk.weekNumber}?`, message: 'All topics in this week will be removed from the roadmap.', confirmLabel: 'Delete week' });
+                            if (!res.ok) return;
                             setEditingCourse({ ...editingCourse, weeks: (editingCourse.weeks || []).filter((_, i) => i !== wIdx) });
                           }}
                           className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
