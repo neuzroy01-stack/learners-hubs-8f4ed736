@@ -5,6 +5,7 @@ import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
 import { PolicyConsentModal } from './components/common/PolicyConsentModal';
 import { PublicLanding } from './components/common/PublicLanding';
+import { FeedbackProvider } from './components/common/Feedback';
 
 import { SuperAdminDashboard } from './components/dashboards/SuperAdminDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
