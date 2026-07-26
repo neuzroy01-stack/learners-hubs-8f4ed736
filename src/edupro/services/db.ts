@@ -1019,6 +1019,138 @@ export const db = {
       'usr-superadmin',
       actorName,
     );
+  },
+
+  // ---------------------------------------------------------------------
+  // SOFT DELETE ARCHIVE (audit-safe recycle bin)
+  // ---------------------------------------------------------------------
+  getTrash(): TrashRecord[] {
+    return getItem<TrashRecord[]>(TRASH_KEY, []);
+  },
+
+  archiveRecord(entity: TrashRecord['entity'], record: any, reason: string, actorId: string, actorName: string, actorRole: any = 'super_admin'): TrashRecord {
+    const list = this.getTrash();
+    const entry: TrashRecord = {
+      id: `trash-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      entity,
+      recordId: record?.id || 'unknown',
+      label:
+        entity === 'payment'
+          ? `${record.receiptNumber} — ${record.studentName}`
+          : entity === 'salary'
+          ? `${record.teacherName} — ${record.monthYear}`
+          : record?.title || record?.id || 'record',
+      amount: Number(record?.amount ?? record?.netSalary ?? 0),
+      snapshot: record,
+      reason: reason || 'No reason provided',
+      deletedById: actorId,
+      deletedByName: actorName,
+      deletedByRole: actorRole,
+      deletedAt: new Date().toISOString(),
+    };
+    list.unshift(entry);
+    setItem(TRASH_KEY, list);
+    return entry;
+  },
+
+  restoreTrashRecord(trashId: string, actorId: string, actorName: string): boolean {
+    const list = this.getTrash();
+    const entry = list.find((t) => t.id === trashId);
+    if (!entry) return false;
+    if (entry.entity === 'payment') this.recordPayment(entry.snapshot);
+    else if (entry.entity === 'salary') this.saveStaffSalary(entry.snapshot);
+    else return false;
+    setItem(TRASH_KEY, list.filter((t) => t.id !== trashId));
+    this.logActivity(actorId, actorName, 'super_admin', `RESTORE_${entry.entity.toUpperCase()}`, entry.label, `Restored deleted ${entry.entity} record (amount ${entry.amount}).`);
+    return true;
+  },
+
+  // ---------------------------------------------------------------------
+  // SALARY CRUD (Super Admin only — enforced at UI + guarded here)
+  // ---------------------------------------------------------------------
+  updateStaffSalary(salaryId: string, changes: Partial<StaffSalaryRecord>, actorId: string, actorName: string): StaffSalaryRecord | undefined {
+    const list = this.getStaffSalaries();
+    const idx = list.findIndex((s) => s.id === salaryId);
+    if (idx < 0) return undefined;
+    const before = { ...list[idx] };
+    const merged = { ...list[idx], ...changes };
+    merged.netSalary = (Number(merged.baseSalary) || 0) + (Number(merged.bonus) || 0) - (Number(merged.deductions) || 0);
+    merged.paidAmount = Math.min(Number(merged.paidAmount) || 0, merged.netSalary);
+    merged.pendingSalary = Math.max(0, merged.netSalary - merged.paidAmount);
+    merged.status = merged.pendingSalary === 0 ? 'paid' : merged.paidAmount > 0 ? 'partial' : 'pending';
+    list[idx] = merged;
+    setItem(STORAGE_KEYS.SALARIES, list);
+    this.logActivity(
+      actorId,
+      actorName,
+      'super_admin',
+      'EDIT_SALARY',
+      merged.teacherName,
+      `Salary ${merged.monthYear} edited. Net ${before.netSalary}→${merged.netSalary}, Paid ${before.paidAmount}→${merged.paidAmount}.`
+    );
+    return merged;
+  },
+
+  deleteStaffSalary(salaryId: string, reason: string, actorId: string, actorName: string): boolean {
+    const list = this.getStaffSalaries();
+    const target = list.find((s) => s.id === salaryId);
+    if (!target) return false;
+    this.archiveRecord('salary', target, reason, actorId, actorName);
+    setItem(STORAGE_KEYS.SALARIES, list.filter((s) => s.id !== salaryId));
+    this.logActivity(
+      actorId,
+      actorName,
+      'super_admin',
+      'DELETE_SALARY',
+      target.teacherName,
+      `Deleted salary voucher ${target.monthYear} of amount ${target.netSalary}. Reason: ${reason || 'N/A'}`
+    );
+    return true;
+  },
+
+  // ---------------------------------------------------------------------
+  // PROFILE PHOTOS (persisted as data URLs in the local database)
+  // ---------------------------------------------------------------------
+  setStudentPhoto(studentId: string, photoUrl: string, actorId: string, actorName: string): boolean {
+    const students = this.getStudents();
+    const student = students.find((s) => s.id === studentId);
+    if (!student) return false;
+    student.photoUrl = photoUrl;
+    setItem(STORAGE_KEYS.STUDENTS, students);
+    const users = this.getUsers();
+    const user = users.find((u) => u.id === student.userId);
+    if (user) {
+      user.avatar = photoUrl;
+      setItem(STORAGE_KEYS.USERS, users);
+    }
+    this.logActivity(actorId, actorName, 'super_admin', photoUrl ? 'UPDATE_PROFILE_PHOTO' : 'REMOVE_PROFILE_PHOTO', student.fullName, `Profile photo ${photoUrl ? 'updated' : 'removed'}.`);
+    return true;
+  },
+
+  setTeacherPhoto(teacherId: string, photoUrl: string, actorId: string, actorName: string): boolean {
+    const teachers = this.getTeachers();
+    const teacher = teachers.find((t) => t.id === teacherId);
+    if (!teacher) return false;
+    teacher.photoUrl = photoUrl;
+    setItem(STORAGE_KEYS.TEACHERS, teachers);
+    const users = this.getUsers();
+    const user = users.find((u) => u.id === teacher.userId);
+    if (user) {
+      user.avatar = photoUrl;
+      setItem(STORAGE_KEYS.USERS, users);
+    }
+    this.logActivity(actorId, actorName, 'super_admin', photoUrl ? 'UPDATE_PROFILE_PHOTO' : 'REMOVE_PROFILE_PHOTO', teacher.fullName, `Profile photo ${photoUrl ? 'updated' : 'removed'}.`);
+    return true;
+  },
+
+  setCourseThumbnail(courseId: string, thumbnail: string, actorId: string, actorName: string): Course | undefined {
+    const courses = this.getCourses();
+    const course = courses.find((c) => c.id === courseId);
+    if (!course) return undefined;
+    course.thumbnail = thumbnail;
+    setItem(STORAGE_KEYS.COURSES, courses);
+    this.logActivity(actorId, actorName, 'super_admin', thumbnail ? 'UPDATE_COURSE_THUMBNAIL' : 'REMOVE_COURSE_THUMBNAIL', course.title, `Course thumbnail ${thumbnail ? 'changed' : 'removed'}.`);
+    return course;
   }
 };
 
