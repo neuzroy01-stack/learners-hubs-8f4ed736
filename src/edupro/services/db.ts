@@ -24,8 +24,11 @@ import {
   FeeSummary,
   StudentVideoProgress,
   SupportTicket,
-  HomeBanner
+  HomeBanner,
+  TrashRecord
 } from '../types/lms';
+
+const TRASH_KEY = 'edupro_trash_v2';
 
 import {
   INITIAL_USERS,
