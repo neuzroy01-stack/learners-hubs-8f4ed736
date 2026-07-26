@@ -5,6 +5,7 @@ import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
 import { PolicyConsentModal } from './components/common/PolicyConsentModal';
 import { PublicLanding } from './components/common/PublicLanding';
+import { FeedbackProvider } from './components/common/Feedback';
 
 import { SuperAdminDashboard } from './components/dashboards/SuperAdminDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
@@ -34,6 +35,7 @@ import { db } from './services/db';
 const MainAppContent: React.FC = () => {
   const { currentRole, currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [selectedCourseForLearning, setSelectedCourseForLearning] = useState<Course | null>(null);
 
   const handleSelectStudentProfile = (student: StudentProfile) => {
@@ -135,16 +137,21 @@ const MainAppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      <Navbar />
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors overflow-x-hidden">
+      <Navbar onOpenMobileMenu={() => setMobileNavOpen(true)} />
 
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar activeTab={activeTab} setActiveTab={(tab) => {
-          setSelectedCourseForLearning(null);
-          setActiveTab(tab);
-        }} />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          activeTab={activeTab}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
+          setActiveTab={(tab) => {
+            setSelectedCourseForLearning(null);
+            setActiveTab(tab);
+          }}
+        />
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           {renderActiveView()}
         </main>
       </div>
@@ -158,9 +165,11 @@ const MainAppContent: React.FC = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <MainAppContent />
-      </AuthProvider>
+      <FeedbackProvider>
+        <AuthProvider>
+          <MainAppContent />
+        </AuthProvider>
+      </FeedbackProvider>
     </ThemeProvider>
   );
 }

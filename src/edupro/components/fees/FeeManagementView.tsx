@@ -4,6 +4,7 @@ import { PaymentRecord, StaffSalaryRecord } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { PayFeeModal } from './PayFeeModal';
+import { useFeedback } from '../common/Feedback';
 
 import {
   CreditCard,
@@ -24,15 +25,30 @@ import {
   Building,
   Calendar,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Pencil,
+  Trash2,
+  History
 } from 'lucide-react';
 
 export const FeeManagementView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries'>('ledger');
+  const { notify, confirm } = useFeedback();
+  const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries' | 'history'>('ledger');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
   const [selectedPayslip, setSelectedPayslip] = useState<StaffSalaryRecord | null>(null);
   const [showPayFeeModal, setShowPayFeeModal] = useState(false);
+  const [, setRefreshTick] = useState(0);
+  const refresh = () => setRefreshTick((t) => t + 1);
+
+  // Super Admin edit modals
+  const [editPayment, setEditPayment] = useState<PaymentRecord | null>(null);
+  const [editSalary, setEditSalary] = useState<StaffSalaryRecord | null>(null);
+
+  // History filters
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
 
 
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
@@ -73,6 +89,87 @@ export const FeeManagementView: React.FC = () => {
 
   const isStudent = currentRole === 'student';
   const isAdmin = currentRole === 'admin' || currentRole === 'super_admin';
+  const isSuperAdmin = currentRole === 'super_admin';
+  const actorId = currentUser?.id || 'usr-superadmin';
+  const actorName = currentUser?.name || 'Super Admin';
+
+  const handleDeletePayment = async (p: PaymentRecord) => {
+    const { ok, reason } = await confirm({
+      title: 'Delete fee payment?',
+      message: `Receipt ${p.receiptNumber} of ${settings.currencySymbol}${p.amount.toLocaleString()} for ${p.studentName} will be removed. Fee totals will be recalculated automatically and this action is recorded in the audit trail.`,
+      confirmLabel: 'Delete payment',
+      requireReason: true
+    });
+    if (!ok) return;
+    try {
+      db.deletePayment(p.id, reason, actorId, actorName);
+      notify('success', 'Payment deleted', `${p.receiptNumber} removed. Fee balances recalculated.`);
+      refresh();
+    } catch (err: any) {
+      notify('error', 'Delete failed', err?.message || 'Could not delete this payment.');
+    }
+  };
+
+  const handleSavePaymentEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPayment) return;
+    try {
+      db.updatePayment(
+        editPayment.id,
+        {
+          amount: Number(editPayment.amount) || 0,
+          paymentDate: editPayment.paymentDate,
+          paymentMode: editPayment.paymentMode,
+          transactionId: editPayment.transactionId || 'N/A',
+          status: editPayment.status,
+          remarks: editPayment.remarks
+        },
+        actorId,
+        actorName
+      );
+      notify('success', 'Payment updated', `${editPayment.receiptNumber} saved and totals recalculated.`);
+      setEditPayment(null);
+      refresh();
+    } catch (err: any) {
+      notify('error', 'Update failed', err?.message || 'Could not update this payment.');
+    }
+  };
+
+  const handleDeleteSalary = async (sal: StaffSalaryRecord) => {
+    const { ok, reason } = await confirm({
+      title: 'Delete salary voucher?',
+      message: `${sal.teacherName} — ${sal.monthYear} (${settings.currencySymbol}${sal.netSalary.toLocaleString()}) will be removed from payroll. The deletion is archived with your name, time and reason.`,
+      confirmLabel: 'Delete salary',
+      requireReason: true
+    });
+    if (!ok) return;
+    db.deleteStaffSalary(sal.id, reason, actorId, actorName);
+    notify('success', 'Salary voucher deleted', `${sal.teacherName} — ${sal.monthYear} removed from payroll.`);
+    refresh();
+  };
+
+  const handleSaveSalaryEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editSalary) return;
+    db.updateStaffSalary(
+      editSalary.id,
+      {
+        monthYear: editSalary.monthYear,
+        baseSalary: Number(editSalary.baseSalary) || 0,
+        bonus: Number(editSalary.bonus) || 0,
+        deductions: Number(editSalary.deductions) || 0,
+        paidAmount: Number(editSalary.paidAmount) || 0,
+        paymentMode: editSalary.paymentMode,
+        transactionId: editSalary.transactionId,
+        remarks: editSalary.remarks
+      },
+      actorId,
+      actorName
+    );
+    notify('success', 'Salary updated', `${editSalary.teacherName} — ${editSalary.monthYear} saved.`);
+    setEditSalary(null);
+    refresh();
+  };
 
   // Security RLS filter for student
   const studentProfile = isStudent ? students.find((s) => s.userId === currentUser?.id) : null;
@@ -285,7 +382,7 @@ export const FeeManagementView: React.FC = () => {
       </div>
 
       {/* Main Tabs Navigation */}
-      <div className="flex space-x-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
         <button
           onClick={() => setActiveTab('ledger')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
@@ -327,6 +424,18 @@ export const FeeManagementView: React.FC = () => {
             >
               <Users className="w-4 h-4" />
               <span>Staff Salary & Payroll</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
+                activeTab === 'history'
+                  ? 'bg-slate-700 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>Transaction History</span>
             </button>
           </>
         )}
@@ -431,13 +540,33 @@ export const FeeManagementView: React.FC = () => {
                         </span>
                       </td>
                       <td className="p-3.5 text-right">
-                        <button
-                          onClick={() => setSelectedReceipt(p)}
-                          className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center space-x-1 ml-auto cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print Receipt</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setSelectedReceipt(p)}
+                            className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Print Receipt</span>
+                          </button>
+                          {isSuperAdmin && (
+                            <>
+                              <button
+                                onClick={() => setEditPayment({ ...p })}
+                                title="Edit payment"
+                                className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeletePayment(p)}
+                                title="Delete payment"
+                                className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -599,13 +728,33 @@ export const FeeManagementView: React.FC = () => {
                         </span>
                       </td>
                       <td className="p-3.5 text-right">
-                        <button
-                          onClick={() => setSelectedPayslip(sal)}
-                          className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center space-x-1 ml-auto cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print Payslip</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setSelectedPayslip(sal)}
+                            className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Print Payslip</span>
+                          </button>
+                          {isSuperAdmin && (
+                            <>
+                              <button
+                                onClick={() => setEditSalary({ ...sal })}
+                                title="Edit salary voucher"
+                                className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSalary(sal)}
+                                title="Delete salary voucher"
+                                className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -615,6 +764,298 @@ export const FeeManagementView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Date-wise Transaction History (Fees + Salaries) */}
+      {activeTab === 'history' && isAdmin && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">From date</label>
+              <input
+                type="date"
+                value={historyFrom}
+                onChange={(e) => setHistoryFrom(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">To date</label>
+              <input
+                type="date"
+                value={historyTo}
+                onChange={(e) => setHistoryTo(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">Search name / receipt / UTR</label>
+              <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 dark:border-slate-700 dark:bg-slate-800">
+                <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <input
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                  placeholder="Type to filter transactions..."
+                  className="w-full bg-transparent py-2 text-xs text-slate-900 focus:outline-none dark:text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {(() => {
+            const rows = [
+              ...payments.map((p) => ({
+                id: p.id,
+                date: p.paymentDate,
+                kind: 'Fee Collection',
+                party: p.studentName,
+                ref: `${p.receiptNumber} · ${p.transactionId}`,
+                amount: p.amount,
+                direction: 'in' as const,
+                status: p.status.replace('_', ' ')
+              })),
+              ...salaries.map((s) => ({
+                id: s.id,
+                date: s.paymentDate || s.monthYear,
+                kind: 'Salary Disbursal',
+                party: s.teacherName,
+                ref: `${s.monthYear} · ${s.transactionId || 'N/A'}`,
+                amount: s.paidAmount,
+                direction: 'out' as const,
+                status: s.status
+              }))
+            ]
+              .filter((r) => {
+                if (historyFrom && r.date < historyFrom) return false;
+                if (historyTo && r.date > historyTo) return false;
+                if (historyQuery) {
+                  const q = historyQuery.toLowerCase();
+                  return `${r.party} ${r.ref} ${r.kind}`.toLowerCase().includes(q);
+                }
+                return true;
+              })
+              .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+            const inflow = rows.filter((r) => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
+            const outflow = rows.filter((r) => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
+
+            return (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:grid-cols-3">
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Transactions</div>
+                    <div className="text-lg font-black text-slate-900 dark:text-white">{rows.length}</div>
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Fee Inflow</div>
+                    <div className="text-lg font-black text-emerald-600">{settings.currencySymbol}{inflow.toLocaleString()}</div>
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-500">Salary Outflow</div>
+                    <div className="text-lg font-black text-rose-600">{settings.currencySymbol}{outflow.toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
+                      <tr>
+                        <th className="p-3.5">Date</th>
+                        <th className="p-3.5">Type</th>
+                        <th className="p-3.5">Party</th>
+                        <th className="p-3.5">Reference</th>
+                        <th className="p-3.5">Amount</th>
+                        <th className="p-3.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-slate-400">No transactions in this date range.</td>
+                        </tr>
+                      ) : (
+                        rows.map((r) => (
+                          <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                            <td className="p-3.5 font-mono text-slate-500">{r.date}</td>
+                            <td className="p-3.5 font-bold text-slate-900 dark:text-white">{r.kind}</td>
+                            <td className="p-3.5 text-slate-600 dark:text-slate-300">{r.party}</td>
+                            <td className="p-3.5 font-mono text-[10px] text-slate-500">{r.ref}</td>
+                            <td className={`p-3.5 font-mono font-bold ${r.direction === 'in' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {r.direction === 'in' ? '+' : '−'}{settings.currencySymbol}{r.amount.toLocaleString()}
+                            </td>
+                            <td className="p-3.5 capitalize text-slate-500">{r.status}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Super Admin — Edit Payment Modal */}
+      {editPayment && isSuperAdmin && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSavePaymentEdit}
+            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Payment · {editPayment.receiptNumber}</h3>
+              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Amount</label>
+                <input
+                  type="number"
+                  value={editPayment.amount}
+                  onChange={(e) => setEditPayment({ ...editPayment, amount: Number(e.target.value) })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment date</label>
+                <input
+                  type="date"
+                  value={editPayment.paymentDate}
+                  onChange={(e) => setEditPayment({ ...editPayment, paymentDate: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Mode</label>
+                <select
+                  value={editPayment.paymentMode}
+                  onChange={(e) => setEditPayment({ ...editPayment, paymentMode: e.target.value as PaymentRecord['paymentMode'] })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  {['Cash', 'UPI', 'Net Banking', 'Credit Card', 'Cheque'].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Status</label>
+                <select
+                  value={editPayment.status}
+                  onChange={(e) => setEditPayment({ ...editPayment, status: e.target.value as PaymentRecord['status'] })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="approved">Approved</option>
+                  <option value="pending_verification">Pending verification</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction / UTR</label>
+                <input
+                  value={editPayment.transactionId}
+                  onChange={(e) => setEditPayment({ ...editPayment, transactionId: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
+                <input
+                  value={editPayment.remarks || ''}
+                  onChange={(e) => setEditPayment({ ...editPayment, remarks: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button type="submit" className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Super Admin — Edit Salary Modal */}
+      {editSalary && isSuperAdmin && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSaveSalaryEdit}
+            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Salary · {editSalary.teacherName}</h3>
+              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Month &amp; Year</label>
+                <input
+                  value={editSalary.monthYear}
+                  onChange={(e) => setEditSalary({ ...editSalary, monthYear: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              {([
+                ['baseSalary', 'Base salary'],
+                ['bonus', 'Bonus'],
+                ['deductions', 'Deductions'],
+                ['paidAmount', 'Paid amount']
+              ] as const).map(([field, label]) => (
+                <div key={field}>
+                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">{label}</label>
+                  <input
+                    type="number"
+                    value={editSalary[field]}
+                    onChange={(e) => setEditSalary({ ...editSalary, [field]: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              ))}
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction reference</label>
+                <input
+                  value={editSalary.transactionId || ''}
+                  onChange={(e) => setEditSalary({ ...editSalary, transactionId: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
+                <input
+                  value={editSalary.remarks || ''}
+                  onChange={(e) => setEditSalary({ ...editSalary, remarks: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <p className="rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-500 dark:bg-slate-800/60">
+              Net salary recalculates automatically as base + bonus − deductions, and the status updates from the paid amount.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Cancel
+              </button>
+              <button type="submit" className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white hover:bg-indigo-700">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+
 
       {/* Record Payment Modal */}
       {showRecordPaymentModal && (

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/db';
 import { Course, CourseModule, Lesson, RoadmapWeek, RoadmapTopic } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
+import { ImageUploader } from '../common/ImageUploader';
+import { LessonVideoMeta } from './LessonVideoMeta';
+import { useFeedback } from '../common/Feedback';
 import {
   BookOpen,
   Plus,
@@ -25,6 +28,7 @@ import {
 
 export const CourseManagementView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { notify, confirm } = useFeedback();
   const [courses, setCourses] = useState<Course[]>([]);
   const [search, setSearch] = useState('');
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
@@ -48,14 +52,33 @@ export const CourseManagementView: React.FC = () => {
     db.saveCourse({ ...course, status: updatedStatus });
   };
 
-  const handleDelete = (courseId: string) => {
-    if (confirm('Are you sure you want to delete this course and all associated syllabus data?')) {
-      db.deleteCourse(courseId);
+  const handleDelete = async (courseId: string) => {
+    const course = courses.find((c) => c.id === courseId);
+    const first = await confirm({
+      title: 'Delete course?',
+      message: `"${course?.title || 'This course'}" and its full syllabus will be removed.`,
+      confirmLabel: 'Delete course'
+    });
+    if (!first.ok) return;
+
+    let result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin');
+    if (!result.ok && result.blockers) {
+      const b = result.blockers;
+      const forced = await confirm({
+        title: 'Linked records found',
+        message: `This course has ${b.enrolledStudents} enrolled students, ${b.liveClasses} live classes, ${b.assignments} assignments and ${b.payments} payments linked. Deleting anyway may affect reports.`,
+        confirmLabel: 'Delete anyway',
+        requireReason: true
+      });
+      if (!forced.ok) return;
+      result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin', true);
     }
+    if (result.ok) notify('success', 'Course deleted', 'The course and its syllabus were removed.');
   };
 
   const handleDuplicate = (courseId: string) => {
     db.duplicateCourse(courseId, currentUser?.name || 'Admin');
+    notify('success', 'Course duplicated', 'A draft copy has been created.');
   };
 
   const handleSaveCourse = (e: React.FormEvent) => {
@@ -64,6 +87,7 @@ export const CourseManagementView: React.FC = () => {
     db.saveCourse(editingCourse);
     setEditingCourse(null);
     setIsCreating(false);
+    notify('success', 'Course saved', 'All content changes are live.');
   };
 
   const startCreateNewCourse = () => {
@@ -350,11 +374,20 @@ export const CourseManagementView: React.FC = () => {
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Thumbnail URL</label>
+                  <div className="sm:col-span-2 space-y-2 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+                    <ImageUploader
+                      label="Course Thumbnail"
+                      shape="wide"
+                      hint="JPG, PNG or WEBP · max 2 MB · auto-optimised"
+                      value={editingCourse.thumbnail}
+                      onChange={(dataUrl) => setEditingCourse({ ...editingCourse, thumbnail: dataUrl })}
+                      onRemove={() => setEditingCourse({ ...editingCourse, thumbnail: '' })}
+                    />
+                    <label className="mt-1 block text-[11px] font-bold text-slate-600 dark:text-slate-400">…or paste a thumbnail URL</label>
                     <input
                       type="url"
-                      value={editingCourse.thumbnail}
+                      value={editingCourse.thumbnail?.startsWith('data:') ? '' : editingCourse.thumbnail}
+                      placeholder="https://..."
                       onChange={(e) => setEditingCourse({ ...editingCourse, thumbnail: e.target.value })}
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white"
                     />
@@ -418,8 +451,9 @@ export const CourseManagementView: React.FC = () => {
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!confirm(`Delete module "${mod.title}" and all its lessons?`)) return;
+                          onClick={async () => {
+                            const res = await confirm({ title: 'Delete module?', message: `"${mod.title}" and all its lessons will be removed from this course.`, confirmLabel: 'Delete module' });
+                            if (!res.ok) return;
                             setEditingCourse({ ...editingCourse, modules: editingCourse.modules.filter((_, idx) => idx !== mIdx) });
                           }}
                           className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
@@ -544,6 +578,15 @@ export const CourseManagementView: React.FC = () => {
                               placeholder="Lesson description / notes"
                               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] text-slate-700 dark:text-slate-300"
                             />
+
+                            <LessonVideoMeta
+                              lesson={les}
+                              onChange={(patch) => {
+                                const updated = [...editingCourse.modules];
+                                updated[mIdx].lessons[lIdx] = { ...les, ...patch };
+                                setEditingCourse({ ...editingCourse, modules: updated });
+                              }}
+                            />
                           </div>
                         ))}
 
@@ -625,8 +668,9 @@ export const CourseManagementView: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (!confirm(`Delete Week ${wk.weekNumber}?`)) return;
+                          onClick={async () => {
+                            const res = await confirm({ title: `Delete Week ${wk.weekNumber}?`, message: 'All topics in this week will be removed from the roadmap.', confirmLabel: 'Delete week' });
+                            if (!res.ok) return;
                             setEditingCourse({ ...editingCourse, weeks: (editingCourse.weeks || []).filter((_, i) => i !== wIdx) });
                           }}
                           className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
