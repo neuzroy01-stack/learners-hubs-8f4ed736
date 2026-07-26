@@ -53,24 +53,31 @@ export const CourseManagementView: React.FC = () => {
 
   const handleDelete = async (courseId: string) => {
     const course = courses.find((c) => c.id === courseId);
-    const ok = await confirm({
+    const first = await confirm({
       title: 'Delete course?',
-      message: `"${course?.title || 'This course'}" and its syllabus will be removed. Linked students, classes and payments will be checked first.`,
-      confirmLabel: 'Delete course',
-      destructive: true
+      message: `"${course?.title || 'This course'}" and its full syllabus will be removed.`,
+      confirmLabel: 'Delete course'
     });
-    if (!ok) return;
-    const result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin');
-    if (result?.success === false) {
-      notify(result.message || 'Course could not be deleted.', 'error');
-      return;
+    if (!first.ok) return;
+
+    let result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin');
+    if (!result.ok && result.blockers) {
+      const b = result.blockers;
+      const forced = await confirm({
+        title: 'Linked records found',
+        message: `This course has ${b.enrolledStudents} enrolled students, ${b.liveClasses} live classes, ${b.assignments} assignments and ${b.payments} payments linked. Deleting anyway may affect reports.`,
+        confirmLabel: 'Delete anyway',
+        requireReason: true
+      });
+      if (!forced.ok) return;
+      result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin', true);
     }
-    notify('Course deleted successfully.', 'success');
+    if (result.ok) notify('success', 'Course deleted', 'The course and its syllabus were removed.');
   };
 
   const handleDuplicate = (courseId: string) => {
     db.duplicateCourse(courseId, currentUser?.name || 'Admin');
-    notify('Course duplicated.', 'success');
+    notify('success', 'Course duplicated', 'A draft copy has been created.');
   };
 
   const handleSaveCourse = (e: React.FormEvent) => {
@@ -79,7 +86,7 @@ export const CourseManagementView: React.FC = () => {
     db.saveCourse(editingCourse);
     setEditingCourse(null);
     setIsCreating(false);
-    notify('Course saved successfully.', 'success');
+    notify('success', 'Course saved', 'All content changes are live.');
   };
 
   const startCreateNewCourse = () => {
