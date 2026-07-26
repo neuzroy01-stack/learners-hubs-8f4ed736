@@ -89,6 +89,87 @@ export const FeeManagementView: React.FC = () => {
 
   const isStudent = currentRole === 'student';
   const isAdmin = currentRole === 'admin' || currentRole === 'super_admin';
+  const isSuperAdmin = currentRole === 'super_admin';
+  const actorId = currentUser?.id || 'usr-superadmin';
+  const actorName = currentUser?.name || 'Super Admin';
+
+  const handleDeletePayment = async (p: PaymentRecord) => {
+    const { ok, reason } = await confirm({
+      title: 'Delete fee payment?',
+      message: `Receipt ${p.receiptNumber} of ${settings.currencySymbol}${p.amount.toLocaleString()} for ${p.studentName} will be removed. Fee totals will be recalculated automatically and this action is recorded in the audit trail.`,
+      confirmLabel: 'Delete payment',
+      requireReason: true
+    });
+    if (!ok) return;
+    try {
+      db.deletePayment(p.id, reason, actorId, actorName);
+      notify('success', 'Payment deleted', `${p.receiptNumber} removed. Fee balances recalculated.`);
+      refresh();
+    } catch (err: any) {
+      notify('error', 'Delete failed', err?.message || 'Could not delete this payment.');
+    }
+  };
+
+  const handleSavePaymentEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPayment) return;
+    try {
+      db.updatePayment(
+        editPayment.id,
+        {
+          amount: Number(editPayment.amount) || 0,
+          paymentDate: editPayment.paymentDate,
+          paymentMode: editPayment.paymentMode,
+          transactionId: editPayment.transactionId || 'N/A',
+          status: editPayment.status,
+          remarks: editPayment.remarks
+        },
+        actorId,
+        actorName
+      );
+      notify('success', 'Payment updated', `${editPayment.receiptNumber} saved and totals recalculated.`);
+      setEditPayment(null);
+      refresh();
+    } catch (err: any) {
+      notify('error', 'Update failed', err?.message || 'Could not update this payment.');
+    }
+  };
+
+  const handleDeleteSalary = async (sal: StaffSalaryRecord) => {
+    const { ok, reason } = await confirm({
+      title: 'Delete salary voucher?',
+      message: `${sal.teacherName} — ${sal.monthYear} (${settings.currencySymbol}${sal.netSalary.toLocaleString()}) will be removed from payroll. The deletion is archived with your name, time and reason.`,
+      confirmLabel: 'Delete salary',
+      requireReason: true
+    });
+    if (!ok) return;
+    db.deleteStaffSalary(sal.id, reason, actorId, actorName);
+    notify('success', 'Salary voucher deleted', `${sal.teacherName} — ${sal.monthYear} removed from payroll.`);
+    refresh();
+  };
+
+  const handleSaveSalaryEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editSalary) return;
+    db.updateStaffSalary(
+      editSalary.id,
+      {
+        monthYear: editSalary.monthYear,
+        baseSalary: Number(editSalary.baseSalary) || 0,
+        bonus: Number(editSalary.bonus) || 0,
+        deductions: Number(editSalary.deductions) || 0,
+        paidAmount: Number(editSalary.paidAmount) || 0,
+        paymentMode: editSalary.paymentMode,
+        transactionId: editSalary.transactionId,
+        remarks: editSalary.remarks
+      },
+      actorId,
+      actorName
+    );
+    notify('success', 'Salary updated', `${editSalary.teacherName} — ${editSalary.monthYear} saved.`);
+    setEditSalary(null);
+    refresh();
+  };
 
   // Security RLS filter for student
   const studentProfile = isStudent ? students.find((s) => s.userId === currentUser?.id) : null;
