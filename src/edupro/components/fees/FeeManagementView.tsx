@@ -425,6 +425,18 @@ export const FeeManagementView: React.FC = () => {
               <Users className="w-4 h-4" />
               <span>Staff Salary & Payroll</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
+                activeTab === 'history'
+                  ? 'bg-slate-700 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>Transaction History</span>
+            </button>
           </>
         )}
       </div>
