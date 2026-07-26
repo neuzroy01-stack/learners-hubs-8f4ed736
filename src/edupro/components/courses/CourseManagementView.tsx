@@ -28,6 +28,7 @@ import {
 
 export const CourseManagementView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { notify, confirm } = useFeedback();
   const [courses, setCourses] = useState<Course[]>([]);
   const [search, setSearch] = useState('');
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
