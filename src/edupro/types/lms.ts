@@ -98,6 +98,9 @@ export interface Lesson {
   attachmentName?: string;
   order: number;
   isLocked?: boolean;
+  weekNumber?: number;
+  chapterName?: string;
+  isPublished?: boolean;
 }
 
 export interface CourseModule {
