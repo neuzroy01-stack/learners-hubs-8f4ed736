@@ -4,6 +4,7 @@ import { PaymentRecord, StaffSalaryRecord } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { PayFeeModal } from './PayFeeModal';
+import { useFeedback } from '../common/Feedback';
 
 import {
   CreditCard,
@@ -24,15 +25,30 @@ import {
   Building,
   Calendar,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Pencil,
+  Trash2,
+  History
 } from 'lucide-react';
 
 export const FeeManagementView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries'>('ledger');
+  const { notify, confirm } = useFeedback();
+  const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries' | 'history'>('ledger');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
   const [selectedPayslip, setSelectedPayslip] = useState<StaffSalaryRecord | null>(null);
   const [showPayFeeModal, setShowPayFeeModal] = useState(false);
+  const [, setRefreshTick] = useState(0);
+  const refresh = () => setRefreshTick((t) => t + 1);
+
+  // Super Admin edit modals
+  const [editPayment, setEditPayment] = useState<PaymentRecord | null>(null);
+  const [editSalary, setEditSalary] = useState<StaffSalaryRecord | null>(null);
+
+  // History filters
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
 
 
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
