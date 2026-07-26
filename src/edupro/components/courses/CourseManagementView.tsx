@@ -556,6 +556,15 @@ export const CourseManagementView: React.FC = () => {
                               placeholder="Lesson description / notes"
                               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-[11px] text-slate-700 dark:text-slate-300"
                             />
+
+                            <LessonVideoMeta
+                              lesson={les}
+                              onChange={(patch) => {
+                                const updated = [...editingCourse.modules];
+                                updated[mIdx].lessons[lIdx] = { ...les, ...patch };
+                                setEditingCourse({ ...editingCourse, modules: updated });
+                              }}
+                            />
                           </div>
                         ))}
 
