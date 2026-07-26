@@ -13,9 +13,10 @@ import {
   ShieldCheck,
   User,
   GraduationCap,
+  Menu,
 } from 'lucide-react';
 
-export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = () => {
+export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = ({ onOpenMobileMenu }) => {
   const { currentUser, currentRole, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [showNotifMenu, setShowNotifMenu] = useState(false);
