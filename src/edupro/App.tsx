@@ -135,16 +135,21 @@ const MainAppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      <Navbar />
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors overflow-x-hidden">
+      <Navbar onOpenMobileMenu={() => setMobileNavOpen(true)} />
 
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar activeTab={activeTab} setActiveTab={(tab) => {
-          setSelectedCourseForLearning(null);
-          setActiveTab(tab);
-        }} />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          activeTab={activeTab}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
+          setActiveTab={(tab) => {
+            setSelectedCourseForLearning(null);
+            setActiveTab(tab);
+          }}
+        />
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           {renderActiveView()}
         </main>
       </div>
