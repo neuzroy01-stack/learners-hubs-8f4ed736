@@ -46,6 +46,7 @@ export interface TeacherProfile {
   fullName: string;
   email: string;
   phone: string;
+  photoUrl?: string;
   subjectSpecialization: string;
   designation: string;
   joiningDate: string;
@@ -53,6 +54,20 @@ export interface TeacherProfile {
   status: 'active' | 'inactive';
   assignedBatchIds: string[];
   assignedCourseIds: string[];
+}
+
+export interface TrashRecord {
+  id: string;
+  entity: 'payment' | 'salary' | 'other';
+  recordId: string;
+  label: string;
+  amount: number;
+  snapshot: any;
+  reason: string;
+  deletedById: string;
+  deletedByName: string;
+  deletedByRole: UserRole;
+  deletedAt: string;
 }
 
 export interface RoadmapTopic {
