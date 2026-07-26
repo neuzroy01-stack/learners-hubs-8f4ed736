@@ -51,14 +51,26 @@ export const CourseManagementView: React.FC = () => {
     db.saveCourse({ ...course, status: updatedStatus });
   };
 
-  const handleDelete = (courseId: string) => {
-    if (confirm('Are you sure you want to delete this course and all associated syllabus data?')) {
-      db.deleteCourse(courseId);
+  const handleDelete = async (courseId: string) => {
+    const course = courses.find((c) => c.id === courseId);
+    const ok = await confirm({
+      title: 'Delete course?',
+      message: `"${course?.title || 'This course'}" and its syllabus will be removed. Linked students, classes and payments will be checked first.`,
+      confirmLabel: 'Delete course',
+      destructive: true
+    });
+    if (!ok) return;
+    const result = db.deleteCourseSafely(courseId, currentUser?.name || 'Admin');
+    if (result?.success === false) {
+      notify(result.message || 'Course could not be deleted.', 'error');
+      return;
     }
+    notify('Course deleted successfully.', 'success');
   };
 
   const handleDuplicate = (courseId: string) => {
     db.duplicateCourse(courseId, currentUser?.name || 'Admin');
+    notify('Course duplicated.', 'success');
   };
 
   const handleSaveCourse = (e: React.FormEvent) => {
@@ -67,6 +79,7 @@ export const CourseManagementView: React.FC = () => {
     db.saveCourse(editingCourse);
     setEditingCourse(null);
     setIsCreating(false);
+    notify('Course saved successfully.', 'success');
   };
 
   const startCreateNewCourse = () => {
