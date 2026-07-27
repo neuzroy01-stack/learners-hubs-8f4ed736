@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '../../services/db';
+import { createAccount, setAccountPassword } from '../../../lib/accounts.functions';
 import { useAuth } from '../../context/AuthContext';
 import { User, UserRole } from '../../types/lms';
 import {
@@ -105,7 +106,7 @@ export const AccountsManagementView: React.FC = () => {
     return errs;
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs = validateForm();
     if (errs.length) {
@@ -115,6 +116,28 @@ export const AccountsManagementView: React.FC = () => {
 
     const actorId = currentUser?.id || 'usr-superadmin';
     const actorName = currentUser?.name || 'Super Admin';
+
+    // Create the cloud account first so the person can sign in from any device.
+    let cloudUserId: string | undefined;
+    let cloudWarning = '';
+    try {
+      const res = await createAccount({
+        data: {
+          fullName,
+          fatherName: role === 'student' ? fatherName : undefined,
+          phone,
+          email,
+          password,
+          role,
+          batchId: batchId || undefined,
+          courseId: courseId || undefined,
+        },
+      });
+      if ('userId' in res && res.userId) cloudUserId = res.userId;
+      else cloudWarning = ` (cloud sign-in not enabled: ${'error' in res ? res.error : 'unknown error'})`;
+    } catch {
+      cloudWarning = ' (cloud sign-in could not be set up — sign in as a cloud Super Admin and retry)';
+    }
 
     try {
       if (role === 'student') {
@@ -127,11 +150,12 @@ export const AccountsManagementView: React.FC = () => {
             password,
             courseId: courseId || undefined,
             batchId: batchId || undefined,
+            userId: cloudUserId,
           },
           actorId,
           actorName,
         );
-        flash(`Student ${fullName} created with fresh (zero) stats.`);
+        flash(`Student ${fullName} created with fresh (zero) stats.${cloudWarning}`);
       } else if (role === 'teacher') {
         db.createTeacherAccount(
           {
@@ -143,18 +167,19 @@ export const AccountsManagementView: React.FC = () => {
             subjectSpecialization: subject || 'General',
             monthlySalary: typeof monthlySalary === 'number' ? monthlySalary : 0,
             assignedCourseIds,
+            userId: cloudUserId,
           },
           actorId,
           actorName,
         );
-        flash(`Teacher ${fullName} created and assigned to ${assignedCourseIds.length} course(s).`);
+        flash(`Teacher ${fullName} created and assigned to ${assignedCourseIds.length} course(s).${cloudWarning}`);
       } else {
         db.createAdminAccount(
-          { fullName, phone, email, password, role },
+          { fullName, phone, email, password, role, userId: cloudUserId },
           actorId,
           actorName,
         );
-        flash(`${role === 'super_admin' ? 'Super Admin' : 'Admin'} ${fullName} created.`);
+        flash(`${role === 'super_admin' ? 'Super Admin' : 'Admin'} ${fullName} created.${cloudWarning}`);
       }
 
       setUsers(db.getUsers());
@@ -166,12 +191,21 @@ export const AccountsManagementView: React.FC = () => {
     }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pwUser) return;
     if (!pwValue || pwValue.length < 6) {
       flash('Password must be at least 6 characters.');
       return;
+    }
+    let cloudNote = '';
+    if (/^[0-9a-f-]{36}$/i.test(pwUser.id)) {
+      try {
+        const res = await setAccountPassword({ data: { userId: pwUser.id, password: pwValue } });
+        if ('error' in res && res.error) cloudNote = ` (cloud password unchanged: ${res.error})`;
+      } catch {
+        cloudNote = ' (cloud password unchanged — please retry)';
+      }
     }
     const ok = db.changeUserPassword(
       pwUser.id,
@@ -180,7 +214,7 @@ export const AccountsManagementView: React.FC = () => {
       currentUser?.name || 'Super Admin',
     );
     if (ok) {
-      flash(`Password updated for ${pwUser.name}.`);
+      flash(`Password updated for ${pwUser.name}.${cloudNote}`);
       setUsers(db.getUsers());
       setPwUser(null);
       setPwValue('');

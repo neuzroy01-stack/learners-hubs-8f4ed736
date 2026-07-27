@@ -2,6 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Phone, Lock, ShieldCheck, ArrowRight } from "lucide-react";
 import { findStudentByPhone, validatePassword, persistSession } from "../edupro/services/authService";
+import { signIn } from "../lib/accounts.functions";
+import { completeCloudSignIn } from "../edupro/services/cloudAuth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -31,7 +33,7 @@ function StudentLoginPage() {
   useEffect(() => setHydrated(true), []);
   if (!hydrated) return null;
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!phone.trim() || !password) {
@@ -39,17 +41,33 @@ function StudentLoginPage() {
       return;
     }
     setSubmitting(true);
-    const user = findStudentByPhone(phone);
-    if (!user || !validatePassword(user, password)) {
+    try {
+      // Cloud account first — works from any device.
+      const res = await signIn({ data: { identifier: phone.trim(), password, staff: false } });
+      if ("session" in res && res.session) {
+        await completeCloudSignIn(res.session, res.profile as never);
+        if (!remember) {
+          try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
+        }
+        navigate({ to: "/app" });
+        return;
+      }
+      // Fall back to a locally provisioned account (legacy records on this device).
+      const user = findStudentByPhone(phone);
+      if (!user || !validatePassword(user, password)) {
+        setSubmitting(false);
+        setError(("error" in res && res.error) || "Invalid phone number or password.");
+        return;
+      }
+      persistSession(user.id);
+      if (!remember) {
+        try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
+      }
+      navigate({ to: "/app" });
+    } catch {
       setSubmitting(false);
-      setError("Invalid phone number or password. Please contact your admin if you cannot sign in.");
-      return;
+      setError("We could not reach the sign-in service. Please try again.");
     }
-    persistSession(user.id);
-    if (!remember) {
-      try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch {}
-    }
-    navigate({ to: "/app" });
   };
 
   return (

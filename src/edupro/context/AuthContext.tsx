@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, UserRole, StudentProfile, TeacherProfile } from '../types/lms';
 import { db } from '../services/db';
+import { cloudSignOut } from '../services/cloudAuth';
 
 const STORAGE_KEY = 'lh_uid';
 
@@ -64,10 +65,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       db.logActivity(currentUser.id, currentUser.name, currentUser.role, 'LOGOUT', 'System Portal', 'User logged out');
     }
     setCurrentUserId(null);
-    try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login';
-    }
+    void cloudSignOut().finally(() => {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    });
   };
 
   const acceptPolicy = () => {

@@ -2,6 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, ShieldCheck, ArrowRight, User as UserIcon } from "lucide-react";
 import { findAdminByIdentifier, validatePassword, persistSession } from "../edupro/services/authService";
+import { signIn, needsBootstrap, bootstrapSuperAdmin } from "../lib/accounts.functions";
+import { completeCloudSignIn } from "../edupro/services/cloudAuth";
 
 export const Route = createFileRoute("/admin-login")({
   head: () => ({
@@ -28,10 +30,45 @@ function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => setHydrated(true), []);
+  const [setupNeeded, setSetupNeeded] = useState(false);
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupMsg, setSetupMsg] = useState<string | null>(null);
+  const [suName, setSuName] = useState("");
+  const [suEmail, setSuEmail] = useState("");
+  const [suPhone, setSuPhone] = useState("");
+  const [suPass, setSuPass] = useState("");
+
+  useEffect(() => {
+    setHydrated(true);
+    needsBootstrap()
+      .then((r) => setSetupNeeded(!!r.needsBootstrap))
+      .catch(() => setSetupNeeded(false));
+  }, []);
   if (!hydrated) return null;
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onCreateSuperAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSetupMsg(null);
+    setSetupBusy(true);
+    try {
+      const res = await bootstrapSuperAdmin({
+        data: { fullName: suName.trim(), phone: suPhone.trim(), email: suEmail.trim(), password: suPass, role: "super_admin" },
+      });
+      if ("error" in res && res.error) {
+        setSetupMsg(res.error);
+      } else {
+        setSetupNeeded(false);
+        setAdminId(suEmail.trim());
+        setSetupMsg("Super Admin created. You can sign in now.");
+      }
+    } catch {
+      setSetupMsg("Setup failed. Please check the details and try again.");
+    } finally {
+      setSetupBusy(false);
+    }
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!adminId.trim() || !password) {
@@ -39,17 +76,31 @@ function AdminLoginPage() {
       return;
     }
     setSubmitting(true);
-    const user = findAdminByIdentifier(adminId);
-    if (!user || !validatePassword(user, password)) {
+    try {
+      const res = await signIn({ data: { identifier: adminId.trim(), password, staff: true } });
+      if ("session" in res && res.session) {
+        await completeCloudSignIn(res.session, res.profile as never);
+        if (!remember) {
+          try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
+        }
+        navigate({ to: "/app" });
+        return;
+      }
+      const user = findAdminByIdentifier(adminId);
+      if (!user || !validatePassword(user, password)) {
+        setSubmitting(false);
+        setError(("error" in res && res.error) || "Invalid credentials. Student accounts must use the Student Login page.");
+        return;
+      }
+      persistSession(user.id);
+      if (!remember) {
+        try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
+      }
+      navigate({ to: "/app" });
+    } catch {
       setSubmitting(false);
-      setError("Invalid credentials. Student accounts must use the Student Login page.");
-      return;
+      setError("We could not reach the sign-in service. Please try again.");
     }
-    persistSession(user.id);
-    if (!remember) {
-      try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch {}
-    }
-    navigate({ to: "/app" });
   };
 
   return (
@@ -155,6 +206,36 @@ function AdminLoginPage() {
           <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3 text-[11px] text-slate-500 dark:text-slate-400">
             Access is restricted to authorised institute staff. Contact the Super Admin for credential issuance or reset.
           </div>
+
+          {setupNeeded && (
+            <form onSubmit={onCreateSuperAdmin} className="mt-6 space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <div className="text-xs font-black uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                First-time setup
+              </div>
+              <p className="text-[11px] text-amber-800 dark:text-amber-200">
+                No Super Admin exists yet. Create the first Super Admin account — it will work on every device.
+              </p>
+              <input value={suName} onChange={(e) => setSuName(e.target.value)} placeholder="Full name" required
+                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm dark:border-amber-900 dark:bg-slate-900" />
+              <input value={suEmail} onChange={(e) => setSuEmail(e.target.value)} type="email" placeholder="Email" required
+                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm dark:border-amber-900 dark:bg-slate-900" />
+              <input value={suPhone} onChange={(e) => setSuPhone(e.target.value)} type="tel" placeholder="Phone number" required
+                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm dark:border-amber-900 dark:bg-slate-900" />
+              <input value={suPass} onChange={(e) => setSuPass(e.target.value)} type="password" placeholder="Password (min 6 characters)" required minLength={6}
+                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm dark:border-amber-900 dark:bg-slate-900" />
+              <button type="submit" disabled={setupBusy}
+                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-500 disabled:opacity-60">
+                {setupBusy ? "Creating..." : "Create Super Admin"}
+              </button>
+            </form>
+          )}
+
+          {setupMsg && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              {setupMsg}
+            </div>
+          )}
+
 
 
           <div className="mt-6 text-center text-xs text-slate-500 dark:text-slate-400">

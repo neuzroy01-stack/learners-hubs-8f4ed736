@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { db } from '../../services/db';
+import { createAccount } from '../../../lib/accounts.functions';
 import { StudentProfile } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -52,17 +53,39 @@ export const StudentList: React.FC<{
     setNewPassword(''); setNewCourseId(''); setNewBatchId(''); setFormError(null);
   };
 
-  const handleCreateStudent = (e: React.FormEvent) => {
+  const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const phoneDigits = newPhone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 6) { setFormError('Enter a valid phone number (min 6 digits).'); return; }
-    if (!newPassword || newPassword.length < 4) { setFormError('Password must be at least 4 characters.'); return; }
+    if (!newPassword || newPassword.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
 
     // Prevent duplicate phone (users are looked up by phone at login)
     const existing = db.getUsers().find((u) => u.phone.replace(/[^0-9]/g, '') === phoneDigits);
     if (existing) { setFormError(`Phone already used by ${existing.name}. Choose a different number.`); return; }
+
+    // Create the cloud login first so the student can sign in from their own device.
+    let cloudUserId: string | undefined;
+    try {
+      const res = await createAccount({
+        data: {
+          fullName: newFullName.trim(),
+          fatherName: newFatherName.trim() || undefined,
+          phone: newPhone.trim(),
+          email: newEmail.trim() || undefined,
+          password: newPassword,
+          role: 'student',
+          courseId: newCourseId || undefined,
+          batchId: newBatchId || undefined,
+        },
+      });
+      if ('userId' in res && res.userId) cloudUserId = res.userId;
+      else if ('error' in res && res.error) { setFormError(res.error); return; }
+    } catch {
+      setFormError('Could not reach the account service. Please try again.');
+      return;
+    }
 
     try {
       const { student } = db.createStudentAccount(
@@ -75,6 +98,7 @@ export const StudentList: React.FC<{
           gender: newGender,
           courseId: newCourseId || undefined,
           batchId: newBatchId || undefined,
+          userId: cloudUserId,
         },
         currentUser?.id || 'usr-superadmin',
         currentUser?.name || 'Super Admin',

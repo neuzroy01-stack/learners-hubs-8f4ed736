@@ -806,10 +806,11 @@ export const db = {
     photoUrl?: string;
     courseId?: string;
     batchId?: string;
+    userId?: string;
   }, actorId: string, actorName: string): { user: User; student: StudentProfile; enrollment?: Enrollment } {
     const count = this.getStudents().length + 1;
     const studentCode = `STU-2026-${String(count).padStart(3, '0')}`;
-    const userId = `usr-stu-${Date.now()}`;
+    const userId = input.userId || `usr-stu-${Date.now()}`;
     const studentId = `stu-${Date.now()}`;
 
     const newUser: User = {
@@ -867,10 +868,11 @@ export const db = {
     monthlySalary?: number;
     assignedCourseIds?: string[];
     assignedBatchIds?: string[];
+    userId?: string;
   }, actorId: string, actorName: string): { user: User; teacher: TeacherProfile } {
     const count = this.getTeachers().length + 1;
     const employeeCode = `TCH-2026-${String(count).padStart(3, '0')}`;
-    const userId = `usr-tch-${Date.now()}`;
+    const userId = input.userId || `usr-tch-${Date.now()}`;
     const teacherId = `tch-${Date.now()}`;
 
     const newUser: User = {
@@ -912,8 +914,9 @@ export const db = {
     email: string;
     password: string;
     role?: 'admin' | 'super_admin';
+    userId?: string;
   }, actorId: string, actorName: string): User {
-    const userId = `usr-adm-${Date.now()}`;
+    const userId = input.userId || `usr-adm-${Date.now()}`;
     const newUser: User = {
       id: userId,
       name: input.fullName,
