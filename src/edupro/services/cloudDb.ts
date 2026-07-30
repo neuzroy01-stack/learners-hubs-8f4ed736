@@ -174,35 +174,37 @@ function courseScoped<K extends 'live_classes' | 'recorded_lectures' | 'study_ma
   ascending = true
 ) {
   type Row = Tables[K]['Row'];
+  // The generic table name defeats postgrest-js' literal-key inference, so we
+  // query through a loosely typed handle and re-apply the concrete Row type.
+  const from = () => (supabase as unknown as { from: (t: string) => any }).from(table);
   return {
     async listByCourse(courseId: string) {
       return unwrap(
-        await supabase.from(table).select('*').eq('course_id', courseId).order(orderBy, { ascending })
+        await from().select('*').eq('course_id', courseId).order(orderBy, { ascending })
       ) as Row[];
     },
     async listForCourses(courseIds: string[]) {
       if (courseIds.length === 0) return [] as Row[];
       return unwrap(
-        await supabase.from(table).select('*').in('course_id', courseIds).order(orderBy, { ascending })
+        await from().select('*').in('course_id', courseIds).order(orderBy, { ascending })
       ) as Row[];
     },
     async create(input: Tables[K]['Insert']) {
-      const row = unwrap(await supabase.from(table).insert(input as never).select().single()) as Row;
+      const row = unwrap(await from().insert(input).select().single()) as Row;
       await logAudit('CREATE', table, (row as { id: string }).id, null, row);
       return row;
     },
     async update(id: string, patch: Tables[K]['Update']) {
-      const row = unwrap(
-        await supabase.from(table).update(patch as never).eq('id', id).select().single()
-      ) as Row;
+      const row = unwrap(await from().update(patch).eq('id', id).select().single()) as Row;
       await logAudit('UPDATE', table, id, null, patch);
       return row;
     },
     async remove(id: string) {
-      const { error } = await supabase.from(table).delete().eq('id', id);
+      const { error } = await from().delete().eq('id', id);
       if (error) throw new Error(error.message);
       await logAudit('DELETE', table, id);
     },
+
   };
 }
 
