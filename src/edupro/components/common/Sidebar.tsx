@@ -40,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'admins_staff', label: 'Admins & Staff', icon: Users },
           { id: 'students', label: 'Students Directory', icon: GraduationCap },
           { id: 'courses', label: 'Courses & Syllabus', icon: BookOpen },
+          { id: 'course_content', label: 'Course Content Manager', icon: FolderDown },
           { id: 'financials', label: 'Fee Revenue', icon: CreditCard },
           { id: 'salary', label: 'Staff Salaries', icon: DollarSign },
           { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
@@ -53,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
           { id: 'students', label: 'Student Management', icon: GraduationCap },
           { id: 'courses', label: 'Courses & Roadmap', icon: BookOpen },
+          { id: 'course_content', label: 'Course Content Manager', icon: FolderDown },
           { id: 'batches', label: 'Batches & Live Schedule', icon: Calendar },
           { id: 'fees', label: 'Fee Collection Ledger', icon: CreditCard },
           { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },
@@ -66,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
         return [
           { id: 'dashboard', label: 'Teaching Overview', icon: LayoutDashboard },
           { id: 'my_batches', label: 'My Batches & Roadmap', icon: BookOpen },
+          { id: 'course_content', label: 'Course Content Manager', icon: FolderDown },
           { id: 'live_schedule', label: 'Live Classes', icon: Radio },
           { id: 'attendance_marker', label: 'Mark Attendance', icon: FileSpreadsheet },
           { id: 'study_materials', label: 'Study Materials', icon: FolderDown },
