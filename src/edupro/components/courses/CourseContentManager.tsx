@@ -469,12 +469,12 @@ const EditorModal: React.FC<{
             </label>
           )}
 
-          {tab !== 'assignments' && tab !== 'live' && null}
-
-          <div>
-            <label className={labelCls}>Description</label>
-            <textarea rows={2} className={inputCls} value={str('description')} onChange={(e) => set('description', e.target.value)} />
-          </div>
+          {tab !== 'assignments' && (
+            <div>
+              <label className={labelCls}>Description</label>
+              <textarea rows={2} className={inputCls} value={str('description')} onChange={(e) => set('description', e.target.value)} />
+            </div>
+          )}
         </div>
 
         <div className="mt-5 flex justify-end gap-2">

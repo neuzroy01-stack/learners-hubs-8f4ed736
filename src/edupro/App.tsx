@@ -14,6 +14,7 @@ import { StudentDashboard } from './components/dashboards/StudentDashboard';
 
 import { StudentList } from './components/students/StudentList';
 import { VideoPlayerView } from './components/courses/VideoPlayerView';
+import { CourseContentManager } from './components/courses/CourseContentManager';
 import { CourseManagementView } from './components/courses/CourseManagementView';
 import { RecordedLecturesView } from './components/courses/RecordedLecturesView';
 import { AssignmentsView } from './components/assignments/AssignmentsView';
@@ -62,6 +63,9 @@ const MainAppContent: React.FC = () => {
         if (currentRole === 'admin') return <AdminDashboard onNavigateTab={setActiveTab} />;
         if (currentRole === 'teacher') return <TeacherDashboard onNavigateTab={setActiveTab} />;
         return <StudentDashboard onSelectCourse={setSelectedCourseForLearning} onNavigateTab={setActiveTab} />;
+
+      case 'course_content':
+        return <CourseContentManager />;
 
       case 'admins_staff':
         return <AccountsManagementView />;
