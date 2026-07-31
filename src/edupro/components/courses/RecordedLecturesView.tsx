@@ -2,25 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/db';
 import { Course, RecordedClass } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import {
-  Video,
-  Play,
-  Lock,
-  Unlock,
-  CheckCircle,
-  FileText,
-  Clock,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Edit2,
-  Trash2,
-  ExternalLink,
-  Search
-} from 'lucide-react';
+import { Video, Play, Lock, Clock as Unlock, CircleCheck as CheckCircle, FileText, Clock, ChevronDown, ChevronRight, Plus, CreditCard as Edit2, Trash2, ExternalLink, Search } from 'lucide-react';
 
 export const RecordedLecturesView: React.FC = () => {
-  const { currentUser, currentRole } = useAuth();
+  const { currentUser, currentRole, studentProfile } = useAuth();
   const [recordedClasses, setRecordedClasses] = useState<RecordedClass[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<RecordedClass | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
@@ -28,6 +13,9 @@ export const RecordedLecturesView: React.FC = () => {
 
   const courses = db.getCourses();
   const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const isStudent = currentRole === 'student';
+  const myEnrollments = isStudent ? db.getEnrollments().filter((e) => e.studentId === (studentProfile?.id || '')) : [];
+  const myCourseIds = new Set(myEnrollments.map((e) => e.courseId));
 
   useEffect(() => {
     loadRecordings();
@@ -70,7 +58,7 @@ export const RecordedLecturesView: React.FC = () => {
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
             <Video className="w-6 h-6 text-indigo-600" />
-            <span>Recorded Lectures & Week-Wise Archive</span>
+            <span>Recorded Lectures &amp; Week-Wise Archive</span>
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Access high-definition recorded sessions, downloadable notes, and week-wise lecture logs.
@@ -102,6 +90,15 @@ export const RecordedLecturesView: React.FC = () => {
         )}
       </div>
 
+      {/* Student with no enrollment → empty state */}
+      {isStudent && myCourseIds.size === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-16 text-center text-slate-500 dark:text-slate-400">
+          <Video className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm font-bold">No course assigned yet</p>
+          <p className="text-xs mt-1">Recorded lectures will become available once a course is assigned to your account.</p>
+        </div>
+      ) : (
+        <>
       {/* Week Tabs Selector */}
       <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-none">
         {weekGroups.map((wk) => (
@@ -167,7 +164,7 @@ export const RecordedLecturesView: React.FC = () => {
                     className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-colors"
                   >
                     <FileText className="w-4 h-4 text-rose-500" />
-                    <span>Download Lecture PDF Notes & Slides</span>
+                    <span>Download Lecture PDF Notes &amp; Slides</span>
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </a>
                 )}
@@ -232,6 +229,8 @@ export const RecordedLecturesView: React.FC = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

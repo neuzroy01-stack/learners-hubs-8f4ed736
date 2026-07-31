@@ -2,22 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/db';
 import { Assignment, Submission } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import {
-  FileCheck,
-  Plus,
-  Calendar,
-  Clock,
-  Award,
-  Upload,
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-  ExternalLink,
-  Edit2,
-  Trash2,
-  X,
-  MessageSquare
-} from 'lucide-react';
+import { FileCheck, Plus, Calendar, Clock, Award, Upload, CircleCheck as CheckCircle2, CircleAlert as AlertCircle, FileText, ExternalLink, CreditCard as Edit2, Trash2, X, MessageSquare } from 'lucide-react';
 
 export const AssignmentsView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
@@ -31,6 +16,9 @@ export const AssignmentsView: React.FC = () => {
 
   const isTeacherOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
   const isStudent = currentRole === 'student';
+  const myEnrollments = isStudent ? db.getEnrollments().filter((e) => e.studentId === (db.getStudentByUserId(currentUser?.id || '')?.id || '')) : [];
+  const myCourseIds = new Set(myEnrollments.map((e) => e.courseId));
+  const hasAssignedCourse = !isStudent || myCourseIds.size > 0;
 
   useEffect(() => {
     loadAssignments();
@@ -124,6 +112,13 @@ export const AssignmentsView: React.FC = () => {
       </div>
 
       {/* Assignment List */}
+      {!hasAssignedCourse ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-16 text-center text-slate-500 dark:text-slate-400">
+          <FileCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm font-bold">No course assigned yet</p>
+          <p className="text-xs mt-1">Assignments will become available after a course is assigned.</p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {assignments.map((asg) => {
           const mySubmission = isStudent && currentUser ? asg.submissions.find((s) => s.studentId === currentUser.id) : null;
@@ -219,6 +214,7 @@ export const AssignmentsView: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       {/* Submission Modal for Student or Grading Drawer for Admin */}
       {selectedAssignment && (

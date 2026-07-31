@@ -782,6 +782,37 @@ export const db = {
   },
 
   // ========== SUPER ADMIN ACCOUNT MANAGEMENT ==========
+  deleteUser(userId: string, actorId: string, actorName: string): boolean {
+    const users = this.getUsers();
+    const target = users.find((u) => u.id === userId);
+    if (!target) return false;
+    target.status = 'inactive';
+    setItem(STORAGE_KEYS.USERS, users);
+    this.logActivity(actorId, actorName, 'super_admin', 'DELETE_USER', target.name, `Soft-deleted user ${target.name} (${target.role}). Historical records preserved.`);
+    return true;
+  },
+
+  setUserStatus(userId: string, status: 'active' | 'inactive' | 'blocked', actorId: string, actorName: string): boolean {
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0) return false;
+    users[idx].status = status;
+    setItem(STORAGE_KEYS.USERS, users);
+    this.logActivity(actorId, actorName, 'super_admin', 'SET_USER_STATUS', users[idx].name, `Set status of ${users[idx].name} to ${status}.`);
+    return true;
+  },
+
+  setUserRole(userId: string, role: UserRole, actorId: string, actorName: string): boolean {
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.id === userId);
+    if (idx < 0) return false;
+    const prev = users[idx].role;
+    users[idx].role = role;
+    setItem(STORAGE_KEYS.USERS, users);
+    this.logActivity(actorId, actorName, 'super_admin', 'CHANGE_ROLE', users[idx].name, `Changed role of ${users[idx].name} from ${prev} to ${role}.`);
+    return true;
+  },
+
   changeUserPassword(userId: string, newPassword: string, actorId: string, actorName: string): boolean {
     if (!newPassword || newPassword.length < 4) return false;
     const users = this.getUsers();

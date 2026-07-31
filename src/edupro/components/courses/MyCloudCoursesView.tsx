@@ -62,7 +62,7 @@ export const MyCloudCoursesView: React.FC = () => {
 
       {courses.length === 0 && !enrolled.loading ? (
         <p className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700">
-          No course has been assigned to you yet. Please contact the administration.
+          You have not been assigned any course yet. Once a course is assigned, it will appear here automatically.
         </p>
       ) : (
         <>

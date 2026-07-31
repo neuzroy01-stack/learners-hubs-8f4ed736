@@ -193,3 +193,113 @@ export const needsBootstrap = createServerFn({ method: "GET" }).handler(async ()
     .in("role", ["super_admin", "admin"]);
   return { needsBootstrap: (count ?? 0) === 0 };
 });
+
+const userIdSchema = z.object({ userId: z.string().uuid() });
+
+/**
+ * Soft-deletes a user: marks the profile as deleted and disables the auth
+ * account so they can no longer sign in. Historical records (payments,
+ * attendance, certificates) are preserved for audit integrity. Super Admin only.
+ */
+export const deleteAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string }) => userIdSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: isSuper } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "super_admin",
+    });
+    if (!isSuper) return { error: "Only a Super Admin can delete accounts." };
+    if (data.userId === context.userId) return { error: "You cannot delete your own account." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: banErr } = await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: "876000h" });
+    if (banErr) return { error: banErr.message };
+
+    const { error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ deleted_at: new Date().toISOString(), status: "inactive" })
+      .eq("id", data.userId);
+    if (profileErr) return { error: profileErr.message };
+
+    return { ok: true };
+  });
+
+/** Restores a previously soft-deleted user. Super Admin only. */
+export const restoreAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string }) => userIdSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: isSuper } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "super_admin",
+    });
+    if (!isSuper) return { error: "Only a Super Admin can restore accounts." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: unbanErr } = await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: "none" });
+    if (unbanErr) return { error: unbanErr.message };
+
+    const { error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ deleted_at: null, status: "active" })
+      .eq("id", data.userId);
+    if (profileErr) return { error: profileErr.message };
+
+    return { ok: true };
+  });
+
+/** Changes a user's role. Super Admin only; cannot change own role. */
+export const changeAccountRole = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string; role: "super_admin" | "admin" | "teacher" | "student" }) =>
+    z.object({ userId: z.string().uuid(), role: z.enum(["super_admin", "admin", "teacher", "student"]) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isSuper } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "super_admin",
+    });
+    if (!isSuper) return { error: "Only a Super Admin can change roles." };
+    if (data.userId === context.userId) return { error: "You cannot change your own role." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ role: data.role })
+      .eq("id", data.userId);
+    if (profileErr) return { error: profileErr.message };
+
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
+    await supabaseAdmin.from("user_roles").insert({ user_id: data.userId, role: data.role });
+    return { ok: true };
+  });
+
+/** Toggles a user's status between active and blocked. Super Admin only. */
+export const setAccountStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string; status: "active" | "blocked" }) =>
+    z.object({ userId: z.string().uuid(), status: z.enum(["active", "blocked"]) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isSuper } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "super_admin",
+    });
+    if (!isSuper) return { error: "Only a Super Admin can change account status." };
+    if (data.userId === context.userId) return { error: "You cannot change your own status." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ status: data.status })
+      .eq("id", data.userId);
+    if (profileErr) return { error: profileErr.message };
+
+    if (data.status === "blocked") {
+      await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: "876000h" });
+    } else {
+      await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: "none" });
+    }
+    return { ok: true };
+  });
