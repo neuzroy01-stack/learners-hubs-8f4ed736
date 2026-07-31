@@ -1,34 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '../../services/db';
-import {
-  createAccount,
-  setAccountPassword,
-  deleteAccount,
-  restoreAccount,
-  changeAccountRole,
-  setAccountStatus,
-} from '../../../lib/accounts.functions';
+import { createAccount, setAccountPassword } from '../../../lib/accounts.functions';
 import { useAuth } from '../../context/AuthContext';
 import { User, UserRole } from '../../types/lms';
-import { useFeedback } from '../common/Feedback';
-import {
-  Users,
-  UserPlus,
-  ShieldCheck,
-  KeyRound,
-  GraduationCap,
-  Briefcase,
-  Search,
-  X,
-  Save,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  Trash2,
-  Power,
-  RefreshCw,
-  Shield,
-} from 'lucide-react';
+import { Users, UserPlus, ShieldCheck, KeyRound, GraduationCap, Briefcase, Search, X, Save, Eye, EyeOff, CircleCheck as CheckCircle2 } from 'lucide-react';
 
 type FormRole = 'student' | 'teacher' | 'admin' | 'super_admin';
 
@@ -59,10 +34,6 @@ export const AccountsManagementView: React.FC = () => {
   const [assignedCourseIds, setAssignedCourseIds] = useState<string[]>([]);
 
   const [errors, setErrors] = useState<string[]>([]);
-  const [roleUser, setRoleUser] = useState<User | null>(null);
-  const [newRole, setNewRole] = useState<UserRole>('student');
-  const [busy, setBusy] = useState(false);
-  const { confirm } = useFeedback();
 
   const courses = db.getCourses();
   const batches = db.getBatches();
@@ -238,70 +209,6 @@ export const AccountsManagementView: React.FC = () => {
     }
   };
 
-  const handleDelete = async (u: User) => {
-    const res = await confirm({
-      title: `Delete ${u.name}?`,
-      message: 'The account is soft-deleted: they can no longer sign in, but their payments, attendance and certificates stay for audit. This cannot be undone from this screen.',
-      confirmLabel: 'Delete account',
-      tone: 'danger',
-    });
-    if (!res.ok) return;
-    setBusy(true);
-    try {
-      if (/^[0-9a-f-]{36}$/i.test(u.id)) {
-        const r = await deleteAccount({ data: { userId: u.id } });
-        if ('error' in r && r.error) { flash(r.error); return; }
-      }
-      db.deleteUser(u.id, currentUser?.id || 'usr-superadmin', currentUser?.name || 'Super Admin');
-      setUsers(db.getUsers());
-      refreshUserData();
-      flash(`${u.name} was deleted.`);
-    } catch (err) {
-      flash((err as Error).message || 'Delete failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleToggleStatus = async (u: User) => {
-    const next = u.status === 'blocked' ? 'active' : 'blocked';
-    setBusy(true);
-    try {
-      if (/^[0-9a-f-]{36}$/i.test(u.id)) {
-        const r = await setAccountStatus({ data: { userId: u.id, status: next } });
-        if ('error' in r && r.error) { flash(r.error); return; }
-      }
-      db.setUserStatus(u.id, next, currentUser?.id || 'usr-superadmin', currentUser?.name || 'Super Admin');
-      setUsers(db.getUsers());
-      flash(`${u.name} is now ${next === 'active' ? 'active' : 'blocked'}.`);
-    } catch (err) {
-      flash((err as Error).message || 'Status change failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleChangeRole = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!roleUser) return;
-    setBusy(true);
-    try {
-      if (/^[0-9a-f-]{36}$/i.test(roleUser.id)) {
-        const r = await changeAccountRole({ data: { userId: roleUser.id, role: newRole } });
-        if ('error' in r && r.error) { flash(r.error); return; }
-      }
-      db.setUserRole(roleUser.id, newRole, currentUser?.id || 'usr-superadmin', currentUser?.name || 'Super Admin');
-      setUsers(db.getUsers());
-      refreshUserData();
-      flash(`Role for ${roleUser.name} changed to ${newRole.replace('_', ' ')}.`);
-      setRoleUser(null);
-    } catch (err) {
-      flash((err as Error).message || 'Role change failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   if (!isSuper) {
     return (
       <div className="p-8">
@@ -403,42 +310,12 @@ export const AccountsManagementView: React.FC = () => {
                     </td>
                     <td className="p-3.5 text-slate-400">{u.createdAt}</td>
                     <td className="p-3.5 text-right">
-                      <div className="inline-flex flex-wrap gap-1.5 justify-end">
-                        <button
-                          onClick={() => { setPwUser(u); setPwValue(''); setPwShow(false); }}
-                          className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
-                          title="Change Password"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { setRoleUser(u); setNewRole(u.role); }}
-                          className="px-2.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
-                          title="Change Role"
-                        >
-                          <Shield className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => void handleToggleStatus(u)}
-                          disabled={busy || u.id === currentUser?.id}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 ${
-                            u.status === 'blocked'
-                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                          }`}
-                          title={u.status === 'blocked' ? 'Enable account' : 'Disable account'}
-                        >
-                          <Power className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => void handleDelete(u)}
-                          disabled={busy || u.id === currentUser?.id}
-                          className="px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950 dark:text-rose-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
-                          title="Delete account"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => { setPwUser(u); setPwValue(''); setPwShow(false); }}
+                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" /> Change Password
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -576,47 +453,6 @@ export const AccountsManagementView: React.FC = () => {
                 <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold">Cancel</button>
                 <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2">
                   <Save className="w-4 h-4" /> Create Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CHANGE ROLE MODAL */}
-      {roleUser && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-black text-base flex items-center gap-2">
-                <Shield className="w-5 h-5 text-indigo-500" /> Change Role
-              </h3>
-              <button onClick={() => setRoleUser(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
-            </div>
-            <form onSubmit={handleChangeRole} className="p-5 space-y-4 text-xs">
-              <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
-                <div className="font-bold">{roleUser.name}</div>
-                <div className="text-slate-500">{roleUser.email} · current role: {roleUser.role.replace('_', ' ')}</div>
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300">New Role</label>
-                <select value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <option value="student">Student</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
-              </div>
-              {newRole === 'student' && roleUser.role !== 'student' && (
-                <p className="text-[10px] text-amber-600">Downgrading to Student will remove staff access. Existing student records are preserved.</p>
-              )}
-              {newRole === 'super_admin' && (
-                <p className="text-[10px] text-amber-600">Super Admins have full control over the system.</p>
-              )}
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" onClick={() => setRoleUser(null)} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold">Cancel</button>
-                <button type="submit" disabled={busy} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2">
-                  <Save className="w-4 h-4" /> Update Role
                 </button>
               </div>
             </form>

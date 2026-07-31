@@ -65,9 +65,7 @@ export const coursesApi = {
     ) as CloudCourse[];
   },
   async create(input: Tables['courses']['Insert']) {
-    const uid = await currentUserId();
-    const payload = { ...input, created_by: uid ?? null };
-    const row = unwrap(await supabase.from('courses').insert(payload).select().single()) as CloudCourse;
+    const row = unwrap(await supabase.from('courses').insert(input).select().single()) as CloudCourse;
     await logAudit('CREATE', 'course', row.id, null, row);
     return row;
   },
