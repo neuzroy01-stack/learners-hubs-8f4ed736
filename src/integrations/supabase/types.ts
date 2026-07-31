@@ -206,13 +206,17 @@ export type Database = {
       }
       courses: {
         Row: {
+          category: string | null
           code: string | null
           created_at: string
           created_by: string | null
           description: string | null
           duration_months: number
           id: string
+          instructor_name: string | null
           is_published: boolean
+          language: string
+          level: string
           official_fee: number
           registration_fee: number
           tax_percent: number
@@ -221,13 +225,17 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           code?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           duration_months?: number
           id?: string
+          instructor_name?: string | null
           is_published?: boolean
+          language?: string
+          level?: string
           official_fee?: number
           registration_fee?: number
           tax_percent?: number
@@ -236,13 +244,17 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           code?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           duration_months?: number
           id?: string
+          instructor_name?: string | null
           is_published?: boolean
+          language?: string
+          level?: string
           official_fee?: number
           registration_fee?: number
           tax_percent?: number
@@ -737,6 +749,7 @@ export type Database = {
       }
       is_staff: { Args: { _user_id: string }; Returns: boolean }
       is_staff_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "teacher" | "student"

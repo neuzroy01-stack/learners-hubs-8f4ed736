@@ -383,3 +383,56 @@ export const auditApi = {
     ) as CloudAuditLog[];
   },
 };
+
+/* ---------------- FINANCE SUMMARY ---------------- */
+export type StudentFinance = {
+  total: number;
+  paid: number;
+  outstanding: number;
+  status: 'PAID' | 'PARTIAL' | 'UNPAID';
+  fees: CloudFee[];
+  payments: CloudPayment[];
+};
+
+/**
+ * Single source of truth for a student's money position.
+ * Total = sum of fee rows (amount + tax - discount). Paid = verified payments only.
+ */
+export const studentFinance = async (studentId: string): Promise<StudentFinance> => {
+  const [fees, payments] = await Promise.all([
+    feesApi.listByStudent(studentId),
+    paymentsApi.listByStudent(studentId),
+  ]);
+  const total = fees.reduce(
+    (sum, f) => sum + Number(f.amount) + Number(f.tax_amount) - Number(f.discount),
+    0
+  );
+  const paid = payments
+    .filter((p) => p.status === 'verified')
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const outstanding = Math.max(0, total - paid);
+  const status: StudentFinance['status'] =
+    total > 0 && outstanding === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
+  return { total, paid, outstanding, status, fees, payments };
+};
+
+/** All pending payments joined with the student name for the approval queue. */
+export const pendingPaymentsWithNames = async () => {
+  const rows = await paymentsApi.listPending();
+  if (rows.length === 0) return [] as (CloudPayment & { student_name: string; course_title: string })[];
+  const studentIds = [...new Set(rows.map((r) => r.student_id))];
+  const courseIds = [...new Set(rows.map((r) => r.course_id).filter(Boolean))] as string[];
+  const [{ data: profiles }, { data: courses }] = await Promise.all([
+    supabase.from('profiles').select('id, full_name').in('id', studentIds),
+    courseIds.length
+      ? supabase.from('courses').select('id, title').in('id', courseIds)
+      : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+  ]);
+  const nameOf = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+  const titleOf = new Map((courses ?? []).map((c) => [c.id, c.title]));
+  return rows.map((r) => ({
+    ...r,
+    student_name: nameOf.get(r.student_id) ?? 'Unknown student',
+    course_title: (r.course_id && titleOf.get(r.course_id)) || '—',
+  }));
+};

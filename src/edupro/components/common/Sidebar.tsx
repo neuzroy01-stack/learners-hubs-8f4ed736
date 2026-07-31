@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Radio,
   FileSpreadsheet,
+  UserCheck,
   X
 } from 'lucide-react';
 
@@ -39,9 +40,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'admins_staff', label: 'Admins & Staff', icon: Users },
           { id: 'students', label: 'Students Directory', icon: GraduationCap },
-          { id: 'courses', label: 'Courses & Syllabus', icon: BookOpen },
+          { id: 'courses', label: 'Courses (Database)', icon: BookOpen },
+          { id: 'course_syllabus', label: 'Syllabus Builder', icon: FileText },
           { id: 'course_content', label: 'Course Content Manager', icon: FolderDown },
+          { id: 'course_assignment', label: 'Course Assignment', icon: UserCheck },
           { id: 'financials', label: 'Fee Revenue', icon: CreditCard },
+          { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },
           { id: 'salary', label: 'Staff Salaries', icon: DollarSign },
           { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
           { id: 'policies', label: 'Policies & Consent', icon: FileText },
@@ -53,8 +57,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
         return [
           { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
           { id: 'students', label: 'Student Management', icon: GraduationCap },
-          { id: 'courses', label: 'Courses & Roadmap', icon: BookOpen },
+          { id: 'courses', label: 'Courses (Database)', icon: BookOpen },
+          { id: 'course_syllabus', label: 'Syllabus Builder', icon: FileText },
           { id: 'course_content', label: 'Course Content Manager', icon: FolderDown },
+          { id: 'course_assignment', label: 'Course Assignment', icon: UserCheck },
           { id: 'batches', label: 'Batches & Live Schedule', icon: Calendar },
           { id: 'fees', label: 'Fee Collection Ledger', icon: CreditCard },
           { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },

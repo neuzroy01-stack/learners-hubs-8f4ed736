@@ -16,6 +16,11 @@ import { StudentList } from './components/students/StudentList';
 import { VideoPlayerView } from './components/courses/VideoPlayerView';
 import { CourseContentManager } from './components/courses/CourseContentManager';
 import { CourseManagementView } from './components/courses/CourseManagementView';
+import { CloudCourseManager } from './components/courses/CloudCourseManager';
+import { MyCloudCoursesView } from './components/courses/MyCloudCoursesView';
+import { CourseAssignmentView } from './components/enrollments/CourseAssignmentView';
+import { PaymentApprovalView } from './components/fees/PaymentApprovalView';
+import { MyCloudFeesView } from './components/fees/MyCloudFeesView';
 import { RecordedLecturesView } from './components/courses/RecordedLecturesView';
 import { AssignmentsView } from './components/assignments/AssignmentsView';
 import { AttendanceView } from './components/attendance/AttendanceView';
@@ -74,13 +79,23 @@ const MainAppContent: React.FC = () => {
         return <StudentList onSelectStudent={handleSelectStudentProfile} />;
 
 
-      case 'courses':
       case 'my_courses':
-        if (currentRole === 'student') {
-          const course = db.getCourses()[0];
-          return <VideoPlayerView course={course} onBack={() => setActiveTab('dashboard')} />;
-        }
+        return <MyCloudCoursesView />;
+
+      case 'courses':
+        return <CloudCourseManager />;
+
+      case 'course_syllabus':
         return <CourseManagementView />;
+
+      case 'course_assignment':
+        return <CourseAssignmentView />;
+
+      case 'payment_verify':
+        return <PaymentApprovalView />;
+
+      case 'my_fees':
+        return <MyCloudFeesView />;
 
       case 'recordings':
       case 'recorded_lectures':
@@ -114,8 +129,6 @@ const MainAppContent: React.FC = () => {
 
       case 'fees':
       case 'financials':
-      case 'my_fees':
-      case 'payment_verify':
       case 'salary':
       case 'my_salary':
         return <FeeManagementView />;
