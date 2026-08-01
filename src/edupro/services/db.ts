@@ -83,6 +83,35 @@ const STORAGE_KEYS = {
   SUPPORT_TICKETS: 'edupro_support_tickets_v2'
 };
 
+/**
+ * One-time cleanup: wipes every legacy business record that was previously
+ * cached in the browser. The database is now the single source of truth, so
+ * any leftover local users / courses / classes / fees must not reappear.
+ */
+const PURGE_FLAG = 'edupro_db_only_purge_v1';
+const PURGE_KEYS = [
+  STORAGE_KEYS.USERS, STORAGE_KEYS.STUDENTS, STORAGE_KEYS.TEACHERS, STORAGE_KEYS.COURSES,
+  STORAGE_KEYS.BATCHES, STORAGE_KEYS.ENROLLMENTS, STORAGE_KEYS.FEE_ADJUSTMENTS,
+  STORAGE_KEYS.PAYMENTS, STORAGE_KEYS.SALARIES, STORAGE_KEYS.LIVE_CLASSES,
+  STORAGE_KEYS.RECORDED_CLASSES, STORAGE_KEYS.ATTENDANCE, STORAGE_KEYS.ASSIGNMENTS,
+  STORAGE_KEYS.QUIZZES, STORAGE_KEYS.QUIZ_ATTEMPTS, STORAGE_KEYS.STUDY_MATERIALS,
+  STORAGE_KEYS.CERTIFICATES, STORAGE_KEYS.ANNOUNCEMENTS, STORAGE_KEYS.NOTIFICATIONS,
+  STORAGE_KEYS.ACTIVITY_LOGS, STORAGE_KEYS.VIDEO_PROGRESS, TRASH_KEY,
+];
+
+if (typeof window !== 'undefined') {
+  try {
+    if (!localStorage.getItem(PURGE_FLAG)) {
+      PURGE_KEYS.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(PURGE_FLAG, new Date().toISOString());
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+
+
 function getItem<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);

@@ -67,7 +67,7 @@ const MainAppContent: React.FC = () => {
         if (currentRole === 'super_admin') return <SuperAdminDashboard />;
         if (currentRole === 'admin') return <AdminDashboard onNavigateTab={setActiveTab} />;
         if (currentRole === 'teacher') return <TeacherDashboard onNavigateTab={setActiveTab} />;
-        return <StudentDashboard onSelectCourse={setSelectedCourseForLearning} onNavigateTab={setActiveTab} />;
+        return <StudentDashboard onNavigateTab={setActiveTab} />;
 
       case 'course_content':
         return <CourseContentManager />;
@@ -145,7 +145,7 @@ const MainAppContent: React.FC = () => {
         if (currentRole === 'super_admin') return <SuperAdminDashboard />;
         if (currentRole === 'admin') return <AdminDashboard onNavigateTab={setActiveTab} />;
         if (currentRole === 'teacher') return <TeacherDashboard onNavigateTab={setActiveTab} />;
-        return <StudentDashboard onSelectCourse={setSelectedCourseForLearning} onNavigateTab={setActiveTab} />;
+        return <StudentDashboard onNavigateTab={setActiveTab} />;
     }
   };
 

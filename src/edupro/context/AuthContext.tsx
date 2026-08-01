@@ -1,13 +1,14 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { User, UserRole, StudentProfile, TeacherProfile } from '../types/lms';
 import { db } from '../services/db';
-import { cloudSignOut } from '../services/cloudAuth';
-
-const STORAGE_KEY = 'lh_uid';
+import { cloudSignOut, ensureLocalAccount, type CloudProfile } from '../services/cloudAuth';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AuthContextType {
   currentUser: User | null;
   currentRole: UserRole;
+  cloudProfile: CloudProfile | null;
+  authLoading: boolean;
   studentProfile: StudentProfile | null;
   teacherProfile: TeacherProfile | null;
   loginAsUser: (userId: string) => void;
@@ -18,57 +19,82 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const readStoredUid = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-};
-
+/**
+ * Authentication is database-only: the signed-in Supabase session decides who
+ * the user is, and the profile row is always re-read from the database so the
+ * app never trusts stale browser data.
+ */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<CloudProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [localTick, setLocalTick] = useState(0);
 
-  useEffect(() => {
-    const syncUsers = () => setUsers(db.getUsers());
-    syncUsers();
-    const unsubscribe = db.subscribe(syncUsers);
-    // hydrate session id from storage (client only)
-    setCurrentUserId(readStoredUid());
-    return () => unsubscribe();
+  const loadProfile = useCallback(async () => {
+    const { data: userRes } = await supabase.auth.getUser();
+    const uid = userRes.user?.id;
+    if (!uid) {
+      setProfile(null);
+      setAuthLoading(false);
+      return;
+    }
+    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+    if (data && (data as CloudProfile).status === 'active') {
+      const p = data as CloudProfile;
+      setProfile(p);
+      ensureLocalAccount(p);
+    } else {
+      setProfile(null);
+      await cloudSignOut();
+    }
+    setAuthLoading(false);
   }, []);
 
-  const currentUser = (currentUserId && users.find((u) => u.id === currentUserId)) || null;
-  const currentRole: UserRole = currentUser?.role || 'student';
+  useEffect(() => {
+    void loadProfile();
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        void loadProfile();
+      }
+    });
+    const unsubscribe = db.subscribe(() => setLocalTick((t) => t + 1));
+    return () => {
+      sub.subscription.unsubscribe();
+      unsubscribe();
+    };
+  }, [loadProfile]);
 
-  const studentProfile = currentUser && currentUser.role === 'student'
-    ? db.getStudentByUserId(currentUser.id) || null
+  const currentUser: User | null = profile
+    ? db.getUsers().find((u) => u.id === profile.id) ?? {
+        id: profile.id,
+        name: profile.full_name,
+        email: profile.email || '',
+        phone: profile.phone || '',
+        role: profile.role,
+        status: 'active',
+        createdAt: new Date().toISOString().split('T')[0],
+        passwordHash: '',
+      }
     : null;
 
-  const teacherProfile = currentUser && currentUser.role === 'teacher'
-    ? db.getTeachers().find((t) => t.userId === currentUser.id) || null
-    : null;
+  const currentRole: UserRole = profile?.role || 'student';
 
-  const loginAsUser = (userId: string) => {
-    setCurrentUserId(userId);
-    try { window.localStorage.setItem(STORAGE_KEY, userId); } catch {}
-    const u = db.getUsers().find((usr) => usr.id === userId);
-    if (u) {
-      db.logActivity(u.id, u.name, u.role, 'LOGIN', 'System Portal', `Logged in as ${u.name} (${u.role})`);
-    }
+  const studentProfile =
+    currentUser && currentRole === 'student' ? db.getStudentByUserId(currentUser.id) || null : null;
+
+  const teacherProfile =
+    currentUser && currentRole === 'teacher'
+      ? db.getTeachers().find((t) => t.userId === currentUser.id) || null
+      : null;
+
+  const loginAsUser = () => {
+    // Sessions are issued by the database; there is no local impersonation.
+    void loadProfile();
   };
 
   const logout = () => {
-    if (currentUser) {
-      db.logActivity(currentUser.id, currentUser.name, currentUser.role, 'LOGOUT', 'System Portal', 'User logged out');
-    }
-    setCurrentUserId(null);
+    setProfile(null);
     void cloudSignOut().finally(() => {
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
+      if (typeof window !== 'undefined') window.location.href = '/login';
     });
   };
 
@@ -76,16 +102,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser) return;
     const settings = db.getSettings();
     db.acceptPolicy(currentUser.id, settings.policy.version);
-    setUsers(db.getUsers());
+    setLocalTick((t) => t + 1);
   };
 
-  const refreshUserData = () => setUsers(db.getUsers());
+  const refreshUserData = () => {
+    setLocalTick((t) => t + 1);
+    void loadProfile();
+  };
 
   return (
     <AuthContext.Provider
       value={{
         currentUser,
         currentRole,
+        cloudProfile: profile,
+        authLoading,
         studentProfile,
         teacherProfile,
         loginAsUser,
