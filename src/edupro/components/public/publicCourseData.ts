@@ -1,4 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
+import { INITIAL_COURSES } from '../../services/mockData';
+import type { Course } from '../../types/lms';
 
 export interface PublicCourseCard {
   id: string;
@@ -18,49 +19,27 @@ export interface PublicCourseCard {
 
 const LEVELS: PublicCourseCard['level'][] = ['Beginner', 'Intermediate', 'Advanced'];
 
-const FALLBACK_THUMB =
-  'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&q=80&w=1200';
-
-/** Deterministic social proof so cards look complete without fake records. */
-const deriveMeta = (index: number) => {
-  const rating = 4.4 + ((index * 13) % 6) / 10;
-  return { rating: Number(rating.toFixed(1)), reviewsCount: 120 + ((index * 47) % 900) };
+const deriveMeta = (c: Course, index: number) => {
+  // deterministic mock enrichments so the landing feels populated
+  const level = LEVELS[index % LEVELS.length];
+  const rating = 4.4 + ((index * 13) % 6) / 10; // 4.4 - 4.9
+  const reviewsCount = 120 + ((index * 47) % 900);
+  return { level, rating: Number(rating.toFixed(1)), reviewsCount };
 };
 
-/**
- * Homepage courses come straight from the database: any course an admin
- * publishes appears here automatically, with no duplicates.
- */
-export const fetchPublicCourses = async (): Promise<PublicCourseCard[]> => {
-  const { data, error } = await supabase
-    .from('courses')
-    .select('*')
-    .eq('is_published', true)
-    .order('created_at', { ascending: true });
-  if (error) throw new Error(error.message);
-
-  const seen = new Set<string>();
-  return (data ?? [])
-    .filter((c) => {
-      const key = c.title.trim().toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
+export const getPublicCourses = (): PublicCourseCard[] =>
+  INITIAL_COURSES
+    .filter((c) => c.status === 'published')
     .map((c, i) => ({
       id: c.id,
-      code: c.code ?? '',
+      code: c.code,
       title: c.title,
-      category: c.category ?? 'Professional Program',
-      description: c.description ?? '',
-      thumbnail: c.thumbnail_url || FALLBACK_THUMB,
-      banner: c.thumbnail_url || undefined,
-      instructorName: c.instructor_name ?? 'Learner Hub Faculty',
-      durationMonths: c.duration_months,
-      feeAmount: Number(c.official_fee),
-      level: (LEVELS.includes(c.level as PublicCourseCard['level'])
-        ? c.level
-        : LEVELS[i % LEVELS.length]) as PublicCourseCard['level'],
-      ...deriveMeta(i),
+      category: c.category,
+      description: c.description,
+      thumbnail: c.thumbnail,
+      banner: c.banner,
+      instructorName: c.instructorName,
+      durationMonths: c.durationMonths,
+      feeAmount: c.feeAmount,
+      ...deriveMeta(c, i),
     }));
-};

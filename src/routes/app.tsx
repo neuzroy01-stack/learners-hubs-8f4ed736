@@ -1,10 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import App from "../edupro/App";
-import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/app")({
-  ssr: false,
   head: () => ({
     meta: [
       { title: "Learner Hub · Dashboard" },
@@ -17,22 +15,23 @@ export const Route = createFileRoute("/app")({
 
 function AppShellRoute() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<"pending" | "ready">("pending");
+  const [status, setStatus] = useState<"pending" | "ready" | "redirect">("pending");
 
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (!alive) return;
-      if (error || !data.user) navigate({ to: "/login", replace: true });
-      else setStatus("ready");
-    })();
-    return () => {
-      alive = false;
-    };
+    try {
+      const uid = window.localStorage.getItem("lh_uid");
+      if (!uid) {
+        setStatus("redirect");
+        navigate({ to: "/login", replace: true });
+      } else {
+        setStatus("ready");
+      }
+    } catch {
+      setStatus("redirect");
+      navigate({ to: "/login", replace: true });
+    }
   }, [navigate]);
 
   if (status !== "ready") return null;
   return <App />;
 }
-
