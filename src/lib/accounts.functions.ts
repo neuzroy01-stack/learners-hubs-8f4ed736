@@ -193,3 +193,61 @@ export const needsBootstrap = createServerFn({ method: "GET" }).handler(async ()
     .in("role", ["super_admin", "admin"]);
   return { needsBootstrap: (count ?? 0) === 0 };
 });
+
+/** Super Admin only: permanently deletes an account (auth user + profile + role). */
+export const deleteAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string }) =>
+    z.object({ userId: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isSuper } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "super_admin",
+    });
+    if (!isSuper) return { error: "Only a Super Admin can delete accounts." };
+    if (data.userId === context.userId) return { error: "You cannot delete your own account." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: victim } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", data.userId)
+      .maybeSingle();
+    if (!victim) return { error: "Account not found." };
+
+    // Remove dependent rows first so nothing orphans.
+    await supabaseAdmin.from("assignment_submissions").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("attendance").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("payments").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("fees").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("enrollments").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("notifications").delete().eq("user_id", data.userId);
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
+    await supabaseAdmin.from("profiles").delete().eq("id", data.userId);
+
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
+    if (error && !/not found/i.test(error.message)) return { error: error.message };
+
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: context.userId,
+      action: "DELETE",
+      entity_type: "account",
+      entity_id: data.userId,
+      old_values: victim as never,
+    });
+
+    return { ok: true };
+  });
+
+/** Staff-only directory read straight from the database. */
+export const listAccounts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isStaff } = await context.supabase.rpc("is_staff", { _user_id: context.userId });
+    if (!isStaff) return { error: "Not allowed." as const, accounts: [] as CloudProfile[] };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin.from("profiles").select("*").order("full_name");
+    return { accounts: (data ?? []) as CloudProfile[] };
+  });
