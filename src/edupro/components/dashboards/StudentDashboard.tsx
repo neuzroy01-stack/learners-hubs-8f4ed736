@@ -139,7 +139,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigateTa
       {/* Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stat('Recorded Lectures', String((lectures.data ?? []).length), <PlayCircle className="w-4 h-4" />, 'bg-blue-100 dark:bg-blue-950/50 text-blue-600', 'recordings')}
-        {stat('Live Classes', String((live.data ?? []).length), <Radio className="w-4 h-4" />, 'bg-purple-100 dark:bg-purple-950/50 text-purple-600', 'live')}
+        {stat('Live Classes', String((live.data ?? []).length), <Radio className="w-4 h-4" />, 'bg-purple-100 dark:bg-purple-950/50 text-purple-600', 'live_classes')}
         {stat('Assignments', String(openAssignments.length), <FileCheck className="w-4 h-4" />, 'bg-amber-100 dark:bg-amber-950/50 text-amber-600', 'assignments')}
         {stat('Study Materials', String((materials.data ?? []).length), <GraduationCap className="w-4 h-4" />, 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600', 'downloads')}
       </div>
@@ -169,7 +169,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigateTa
                 </div>
               </dl>
               <button
-                onClick={() => onNavigateTab('fees')}
+                onClick={() => onNavigateTab('my_fees')}
                 className="w-full mt-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 flex items-center justify-center gap-1.5"
               >
                 Pay / view fee history <ArrowRight className="w-3.5 h-3.5" />
