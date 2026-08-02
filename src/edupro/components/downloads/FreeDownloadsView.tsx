@@ -87,19 +87,25 @@ export const FreeDownloadsView: React.FC = () => {
 
         {isTeacherOrAdmin && (
           <button
-            onClick={() => {
-              const newMat: StudyMaterial = {
-                id: `mat-${Date.now()}`,
-                courseId: 'course-yt-master-101',
-                courseTitle: 'YouTube All Creator Master Program 2026',
-                title: 'YouTube Algorithm & SEO Cheat Sheet 2026',
-                category: 'PDF Notes',
-                fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-                fileName: 'YouTube_SEO_CheatSheet_2026.pdf',
-                uploadedBy: 'Faculty Master',
-                uploadedAt: new Date().toISOString().split('T')[0]
-              };
-              db.saveStudyMaterial(newMat);
+            onClick={async () => {
+              const course = courses[0];
+              if (!course) {
+                alert('Create a course first.');
+                return;
+              }
+              const title = prompt('Resource title');
+              if (!title) return;
+              const fileUrl = prompt('File URL (PDF / ZIP / link)');
+              if (!fileUrl) return;
+              const category = prompt('Category (PDF Notes, Lecture Slides, Practice Sheet, Video Resource, External Link)', 'PDF Notes') || 'PDF Notes';
+              await materialsApi.create({
+                course_id: course.id,
+                title,
+                file_url: fileUrl,
+                file_type: category,
+                is_published: true,
+              });
+              await loadMaterials();
             }}
             className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
