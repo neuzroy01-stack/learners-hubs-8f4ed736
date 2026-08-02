@@ -1,23 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/db';
 import { Course, RecordedClass } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import {
-  Video,
-  Play,
-  Lock,
-  Unlock,
-  CheckCircle,
-  FileText,
-  Clock,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Edit2,
-  Trash2,
-  ExternalLink,
-  Search
-} from 'lucide-react';
+import { Video, Play, Lock, Clock as Unlock, CircleCheck as CheckCircle, FileText, Clock, ChevronDown, ChevronRight, Plus, CreditCard as Edit2, Trash2, ExternalLink, Search, TriangleAlert as AlertTriangle, Youtube } from 'lucide-react';
+
+/**
+ * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
+ * iframe-embeddable `https://www.youtube.com/embed/VIDEO_ID` form. YouTube
+ * refuses to connect when a `watch?v=` URL is loaded inside an iframe, so
+ * every recorded lecture must be normalised before it reaches the player.
+ * Returns `null` when the URL is not a YouTube link.
+ */
+function toYouTubeEmbedUrl(rawUrl: string): string | null {
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.replace(/^www\./, '');
+    let id: string | null = null;
+
+    if (host === 'youtu.be') {
+      id = parsed.pathname.slice(1).split('/')[0] || null;
+    } else if (host.endsWith('youtube.com')) {
+      if (parsed.pathname === '/watch') {
+        id = parsed.searchParams.get('v');
+      } else if (parsed.pathname.startsWith('/embed/')) {
+        id = parsed.pathname.split('/')[2] || null;
+      } else if (parsed.pathname.startsWith('/live/')) {
+        id = parsed.pathname.split('/')[2] || null;
+      } else if (parsed.pathname.startsWith('/shorts/')) {
+        id = parsed.pathname.split('/')[2] || null;
+      } else if (parsed.pathname.startsWith('/v/')) {
+        id = parsed.pathname.split('/')[2] || null;
+      }
+    }
+
+    if (!id) return null;
+    // Preserve rel=0 to keep the player from suggesting unrelated videos.
+    return `https://www.youtube.com/embed/${id}?rel=0`;
+  } catch {
+    return null;
+  }
+}
+
+/** Extracts the 11-char video id so we can link the student straight to YouTube. */
+function toYouTubeWatchUrl(rawUrl: string): string | null {
+  const embed = toYouTubeEmbedUrl(rawUrl);
+  if (!embed) return null;
+  const id = embed.split('/embed/')[1]?.split('?')[0];
+  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+}
 
 export const RecordedLecturesView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
@@ -25,9 +56,26 @@ export const RecordedLecturesView: React.FC = () => {
   const [selectedVideo, setSelectedVideo] = useState<RecordedClass | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
   const [search, setSearch] = useState('');
+  const [embedFailed, setEmbedFailed] = useState(false);
 
   const courses = db.getCourses();
   const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+
+  // Pre-compute the embeddable URL once per selected video so the iframe never
+  // receives a raw `watch?v=` link (which YouTube refuses inside an iframe).
+  const embedUrl = useMemo(
+    () => (selectedVideo ? toYouTubeEmbedUrl(selectedVideo.videoUrl) : null),
+    [selectedVideo],
+  );
+  const watchUrl = useMemo(
+    () => (selectedVideo ? toYouTubeWatchUrl(selectedVideo.videoUrl) : null),
+    [selectedVideo],
+  );
+
+  // Reset the embed-failed flag whenever the student picks a new lecture.
+  useEffect(() => {
+    setEmbedFailed(false);
+  }, [selectedVideo]);
 
   useEffect(() => {
     loadRecordings();
@@ -134,14 +182,36 @@ export const RecordedLecturesView: React.FC = () => {
                       This lecture recording is locked. Complete previous assignments or verify fee receipts to unlock.
                     </p>
                   </div>
-                ) : (
+                ) : embedUrl && !embedFailed ? (
                   <iframe
-                    src={selectedVideo.videoUrl}
+                    key={embedUrl}
+                    src={embedUrl}
                     title={selectedVideo.title}
                     className="w-full h-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
-                  ></iframe>
+                    onError={() => setEmbedFailed(true)}
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 text-white space-y-3">
+                    <AlertTriangle className="w-12 h-12 text-amber-500" />
+                    <h3 className="text-base font-bold">This video can't be played here</h3>
+                    <p className="text-xs text-slate-400 max-w-md">
+                      {embedUrl
+                        ? 'YouTube blocked the embedded player for this video. This usually means the video owner has disabled embedding.'
+                        : 'The video URL could not be recognised as a YouTube link.'}
+                    </p>
+                    {watchUrl && (
+                      <a
+                        href={watchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors"
+                      >
+                        <Youtube className="w-4 h-4" /> Open on YouTube
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -168,6 +238,19 @@ export const RecordedLecturesView: React.FC = () => {
                   >
                     <FileText className="w-4 h-4 text-rose-500" />
                     <span>Download Lecture PDF Notes & Slides</span>
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                )}
+
+                {watchUrl && (
+                  <a
+                    href={watchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 inline-flex items-center space-x-2 px-4 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-900 transition-colors"
+                  >
+                    <Youtube className="w-4 h-4" />
+                    <span>Open on YouTube</span>
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </a>
                 )}
