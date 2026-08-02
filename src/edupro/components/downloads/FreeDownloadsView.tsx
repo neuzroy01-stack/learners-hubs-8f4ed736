@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../../services/db';
-import { StudyMaterial } from '../../types/lms';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useCourseScope } from '../../hooks/useCourseScope';
+import { materialsApi, type CloudMaterial } from '../../services/cloudDb';
 import {
   FolderDown,
   FileText,
@@ -15,27 +15,52 @@ import {
   BookOpen
 } from 'lucide-react';
 
+type MaterialCard = {
+  id: string;
+  title: string;
+  category: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedBy: string;
+};
+
 export const FreeDownloadsView: React.FC = () => {
   const { currentRole } = useAuth();
-  const [materials, setMaterials] = useState<StudyMaterial[]>([]);
+  const { courses, courseIds, isStaff, loading: scopeLoading } = useCourseScope();
+  const [materials, setMaterials] = useState<MaterialCard[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const isTeacherOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const isTeacherOrAdmin = isStaff;
+
+  const loadMaterials = useCallback(async () => {
+    if (courseIds.length === 0) {
+      setMaterials([]);
+      return;
+    }
+    const rows = (await materialsApi.listForCourses(courseIds)) as CloudMaterial[];
+    const visible = isStaff ? rows : rows.filter((r) => r.is_published);
+    const titleOf = new Map(courses.map((c) => [c.id, c.title]));
+    setMaterials(
+      visible.map((r) => ({
+        id: r.id,
+        title: r.title,
+        category: r.file_type,
+        fileName: r.description || r.file_url.split('/').pop() || r.title,
+        fileUrl: r.file_url,
+        uploadedBy: titleOf.get(r.course_id) ?? 'Course',
+      }))
+    );
+  }, [courseIds.join(','), isStaff, courses]);
 
   useEffect(() => {
-    loadMaterials();
-    const unsub = db.subscribe(() => loadMaterials());
-    return unsub;
-  }, []);
+    if (!scopeLoading) void loadMaterials();
+  }, [scopeLoading, loadMaterials]);
 
-  const loadMaterials = () => {
-    setMaterials(db.getStudyMaterials());
-  };
-
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this study material?')) {
-      db.deleteStudyMaterial(id);
+      await materialsApi.remove(id);
+      await loadMaterials();
     }
   };
 
@@ -44,6 +69,7 @@ export const FreeDownloadsView: React.FC = () => {
     const matchesCat = selectedCategory === 'all' || m.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
+
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -61,19 +87,25 @@ export const FreeDownloadsView: React.FC = () => {
 
         {isTeacherOrAdmin && (
           <button
-            onClick={() => {
-              const newMat: StudyMaterial = {
-                id: `mat-${Date.now()}`,
-                courseId: 'course-yt-master-101',
-                courseTitle: 'YouTube All Creator Master Program 2026',
-                title: 'YouTube Algorithm & SEO Cheat Sheet 2026',
-                category: 'PDF Notes',
-                fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-                fileName: 'YouTube_SEO_CheatSheet_2026.pdf',
-                uploadedBy: 'Faculty Master',
-                uploadedAt: new Date().toISOString().split('T')[0]
-              };
-              db.saveStudyMaterial(newMat);
+            onClick={async () => {
+              const course = courses[0];
+              if (!course) {
+                alert('Create a course first.');
+                return;
+              }
+              const title = prompt('Resource title');
+              if (!title) return;
+              const fileUrl = prompt('File URL (PDF / ZIP / link)');
+              if (!fileUrl) return;
+              const category = prompt('Category (PDF Notes, Lecture Slides, Practice Sheet, Video Resource, External Link)', 'PDF Notes') || 'PDF Notes';
+              await materialsApi.create({
+                course_id: course.id,
+                title,
+                file_url: fileUrl,
+                file_type: category,
+                is_published: true,
+              });
+              await loadMaterials();
             }}
             className="flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
