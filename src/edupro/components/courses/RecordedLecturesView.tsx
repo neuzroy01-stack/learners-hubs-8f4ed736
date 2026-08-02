@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/db';
+import { Course, RecordedClass } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import { useCourseScope } from '../../hooks/useCourseScope';
-import { lecturesApi, type CloudLecture } from '../../services/cloudDb';
 import {
   Video,
   Play,
@@ -19,65 +19,39 @@ import {
   Search
 } from 'lucide-react';
 
-type LectureCard = {
-  id: string;
-  title: string;
-  topic: string;
-  videoUrl: string;
-  durationMinutes: number;
-  recordingDate: string;
-  weekNumber: number;
-  notesPdfUrl?: string;
-  isLocked?: boolean;
-};
-
 export const RecordedLecturesView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const { courses, isStaff, loading: scopeLoading } = useCourseScope();
-  const [activeCourseId, setActiveCourseId] = useState<string>('');
-  const [recordedClasses, setRecordedClasses] = useState<LectureCard[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<LectureCard | null>(null);
+  const [recordedClasses, setRecordedClasses] = useState<RecordedClass[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<RecordedClass | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
-  const [extraWeeks, setExtraWeeks] = useState<number[]>([]);
   const [search, setSearch] = useState('');
 
-  const isFacultyOrAdmin = isStaff;
+  const courses = db.getCourses();
+  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
 
   useEffect(() => {
-    if (!activeCourseId && courses.length > 0) setActiveCourseId(courses[0].id);
-    if (courses.length === 0) setActiveCourseId('');
-  }, [courses, activeCourseId]);
+    loadRecordings();
+    const unsub = db.subscribe(() => loadRecordings());
+    return unsub;
+  }, []);
 
-  const loadRecordings = useCallback(async () => {
-    if (!activeCourseId) {
-      setRecordedClasses([]);
-      setSelectedVideo(null);
-      return;
+  const loadRecordings = () => {
+    const list = db.getRecordedClasses();
+    setRecordedClasses(list);
+    const weekList = list.filter((r) => (r.weekNumber || 1) === selectedWeek);
+    if (weekList.length > 0) {
+      setSelectedVideo(weekList[0]);
+    } else if (list.length > 0 && !selectedVideo) {
+      setSelectedVideo(list[0]);
     }
-    const rows = (await lecturesApi.listByCourse(activeCourseId)) as CloudLecture[];
-    const visible = isStaff ? rows : rows.filter((r) => r.is_published);
-    const mapped: LectureCard[] = visible.map((r) => ({
-      id: r.id,
-      title: r.title,
-      topic: r.description || '',
-      videoUrl: r.video_url,
-      durationMinutes: r.duration_minutes ?? 0,
-      recordingDate: new Date(r.created_at).toISOString().split('T')[0],
-      weekNumber: r.week_number ?? 1,
-    }));
-    setRecordedClasses(mapped);
-    const forWeek = mapped.filter((m) => m.weekNumber === selectedWeek);
-    setSelectedVideo(forWeek[0] ?? null);
-  }, [activeCourseId, isStaff, selectedWeek]);
-
-  useEffect(() => {
-    if (!scopeLoading) void loadRecordings();
-  }, [scopeLoading, loadRecordings]);
+  };
 
   const handleWeekChange = (wk: number) => {
     setSelectedWeek(wk);
-    const weekList = recordedClasses.filter((r) => r.weekNumber === wk);
-    setSelectedVideo(weekList[0] ?? null);
+    const weekList = recordedClasses.filter((r) => (r.weekNumber || 1) === wk);
+    if (weekList.length > 0) {
+      setSelectedVideo(weekList[0]);
+    }
   };
 
   const filteredRecordings = recordedClasses.filter((r) => {
@@ -85,57 +59,9 @@ export const RecordedLecturesView: React.FC = () => {
     return matchesSearch;
   });
 
-  const activeWeekRecordings = filteredRecordings.filter((r) => r.weekNumber === selectedWeek);
+  const activeWeekRecordings = filteredRecordings.filter((r) => (r.weekNumber || 1) === selectedWeek);
 
-  // Weeks are fully dynamic: they exist because content exists in them,
-  // plus any empty week a staff member just created.
-  const weekGroups = [...new Set([...recordedClasses.map((r) => r.weekNumber), ...extraWeeks])].sort((a, b) => a - b);
-
-  const addWeek = () => {
-    const next = (weekGroups[weekGroups.length - 1] ?? 0) + 1;
-    setExtraWeeks((w) => [...w, next]);
-    setSelectedWeek(next);
-    setSelectedVideo(null);
-  };
-
-  const deleteWeek = async (wk: number) => {
-    const inWeek = recordedClasses.filter((r) => r.weekNumber === wk);
-    if (!confirm(`Delete Week ${wk} and its ${inWeek.length} lecture(s)?`)) return;
-    for (const rec of inWeek) await lecturesApi.remove(rec.id);
-    setExtraWeeks((w) => w.filter((x) => x !== wk));
-    await loadRecordings();
-  };
-
-  const moveWeek = async (wk: number) => {
-    const target = Number(prompt(`Move Week ${wk} content to which week number?`, String(wk)));
-    if (!target || target === wk) return;
-    for (const rec of recordedClasses.filter((r) => r.weekNumber === wk)) {
-      await lecturesApi.update(rec.id, { week_number: target });
-    }
-    setSelectedWeek(target);
-    await loadRecordings();
-  };
-
-  const addLecture = async () => {
-    if (!activeCourseId) {
-      alert('Create a course first.');
-      return;
-    }
-    const title = prompt('Lecture title');
-    if (!title) return;
-    const videoUrl = prompt('Video URL (YouTube embed or direct link)');
-    if (!videoUrl) return;
-    const duration = Number(prompt('Duration in minutes', '30') || 0);
-    await lecturesApi.create({
-      course_id: activeCourseId,
-      title,
-      video_url: videoUrl,
-      duration_minutes: duration,
-      week_number: selectedWeek,
-      is_published: true,
-    });
-    await loadRecordings();
-  };
+  const weekGroups = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -151,29 +77,29 @@ export const RecordedLecturesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {courses.length > 0 && (
-            <select
-              value={activeCourseId}
-              onChange={(e) => setActiveCourseId(e.target.value)}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white"
-            >
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>{c.title}</option>
-              ))}
-            </select>
-          )}
-
-          {isFacultyOrAdmin && (
-            <button
-              onClick={addLecture}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Lecture Recording</span>
-            </button>
-          )}
-        </div>
+        {isFacultyOrAdmin && (
+          <button
+            onClick={() => {
+              const newRec: RecordedClass = {
+                id: `rec-${Date.now()}`,
+                courseId: courses[0]?.id || 'course-yt-master-101',
+                courseTitle: courses[0]?.title || 'YouTube Master Program',
+                batchId: 'batch-yt-1',
+                title: 'Week 1: Algorithmic Video Creation & YouTube SEO',
+                videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+                durationMinutes: 50,
+                recordingDate: new Date().toISOString().split('T')[0],
+                notesUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+              };
+              db.getRecordedClasses().push(newRec);
+              loadRecordings();
+            }}
+            className="flex items-center space-x-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Lecture Recording</span>
+          </button>
+        )}
       </div>
 
       {/* Week Tabs Selector */}
@@ -191,35 +117,7 @@ export const RecordedLecturesView: React.FC = () => {
             Week {wk}
           </button>
         ))}
-
-        {isFacultyOrAdmin && (
-          <>
-            <button
-              onClick={addWeek}
-              className="px-3 py-2 rounded-xl text-xs font-bold shrink-0 bg-white dark:bg-slate-900 text-indigo-600 border border-dashed border-indigo-300 dark:border-indigo-800 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 inline" /> Week
-            </button>
-            {weekGroups.includes(selectedWeek) && (
-              <>
-                <button
-                  onClick={() => moveWeek(selectedWeek)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold shrink-0 bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800 cursor-pointer"
-                >
-                  <Edit2 className="w-3.5 h-3.5 inline" />
-                </button>
-                <button
-                  onClick={() => deleteWeek(selectedWeek)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold shrink-0 bg-white dark:bg-slate-900 text-rose-500 border border-slate-200 dark:border-slate-800 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5 inline" />
-                </button>
-              </>
-            )}
-          </>
-        )}
       </div>
-
 
       {/* Main Player + Playlist Split View */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

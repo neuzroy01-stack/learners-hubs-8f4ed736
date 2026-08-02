@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/db';
+import { LiveClass } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import { useCourseScope } from '../../hooks/useCourseScope';
-import { liveClassesApi, type CloudLiveClass } from '../../services/cloudDb';
-import { profilesApi } from '../../services/cloudProfiles';
 import {
   Radio,
   Video,
@@ -15,28 +14,9 @@ import {
   X
 } from 'lucide-react';
 
-type LiveCard = {
-  id: string;
-  title: string;
-  status: string;
-  batchName: string;
-  teacherName: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  meetingLink: string;
-  recordingLink?: string;
-};
-
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
-const fmtTime = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—';
-
 export const LiveClassesView: React.FC = () => {
   const { currentRole, currentUser } = useAuth();
-  const { courses, courseIds, isStaff, loading: scopeLoading } = useCourseScope();
-  const [liveClasses, setLiveClasses] = useState<LiveCard[]>([]);
+  const [liveClasses, setLiveClasses] = useState<LiveClass[]>([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   // Form
@@ -45,66 +25,44 @@ export const LiveClassesView: React.FC = () => {
   const [scheduledTime, setScheduledTime] = useState('');
   const [meetingUrl, setMeetingUrl] = useState('');
 
-  const isFacultyOrAdmin = isStaff;
-
-  const loadClasses = useCallback(async () => {
-    if (courseIds.length === 0) {
-      setLiveClasses([]);
-      return;
-    }
-    const rows = (await liveClassesApi.listForCourses(courseIds)) as CloudLiveClass[];
-    const visible = isStaff ? rows : rows.filter((r) => r.is_published);
-    const teacherIds = [...new Set(visible.map((r) => r.teacher_id).filter(Boolean))] as string[];
-    const teacherNames = new Map<string, string>();
-    await Promise.all(
-      teacherIds.map(async (id) => {
-        const p = await profilesApi.get(id).catch(() => null);
-        if (p) teacherNames.set(id, p.full_name);
-      })
-    );
-    const titleOf = new Map(courses.map((c) => [c.id, c.title]));
-    setLiveClasses(
-      visible.map((r) => ({
-        id: r.id,
-        title: r.title,
-        status: r.status,
-        batchName: titleOf.get(r.course_id) ?? '',
-        teacherName: (r.teacher_id && teacherNames.get(r.teacher_id)) || '—',
-        date: fmtDate(r.starts_at),
-        startTime: fmtTime(r.starts_at),
-        endTime: fmtTime(r.ends_at),
-        meetingLink: r.meeting_url || '#',
-      }))
-    );
-  }, [courseIds.join(','), isStaff, courses]);
+  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const batches = db.getBatches();
 
   useEffect(() => {
-    if (!scopeLoading) void loadClasses();
-  }, [scopeLoading, loadClasses]);
+    loadClasses();
+    const unsub = db.subscribe(() => loadClasses());
+    return unsub;
+  }, []);
 
-  const handleSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const courseId = batchId || courses[0]?.id;
-    if (!courseId) {
-      alert('Create a course first.');
-      return;
-    }
-    await liveClassesApi.create({
-      course_id: courseId,
-      title: title || 'Live Session',
-      platform: 'other',
-      meeting_url: meetingUrl,
-      teacher_id: currentUser?.id ?? null,
-      starts_at: new Date(scheduledTime).toISOString(),
-      is_published: true,
-    });
-    setTitle('');
-    setMeetingUrl('');
-    setScheduledTime('');
-    setShowScheduleModal(false);
-    await loadClasses();
+  const loadClasses = () => {
+    setLiveClasses(db.getLiveClasses());
   };
 
+  const handleSchedule = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const selectedBatch = batches.find((b) => b.id === batchId) || batches[0];
+    const newLive: LiveClass = {
+      id: `live-${Date.now()}`,
+      title: title || 'Live Q&A & Strategy Session',
+      topic: 'Live Q&A Strategy',
+      courseId: selectedBatch?.courseId || 'course-yt-master-101',
+      courseTitle: selectedBatch?.courseTitle || 'YouTube Master Program',
+      batchId: selectedBatch?.id || 'batch-yt-1',
+      batchName: selectedBatch?.name || 'Batch 1',
+      teacherId: currentUser?.id || 'usr-teacher',
+      teacherName: currentUser?.name || 'Faculty Lead',
+      date: scheduledTime.split('T')[0] || new Date().toISOString().split('T')[0],
+      startTime: '10:00 AM',
+      endTime: '11:00 AM',
+      meetingLink: meetingUrl || 'https://meet.google.com/abc-defg-hij',
+      status: 'upcoming'
+    };
+
+    db.saveLiveClass(newLive);
+    alert('Live Class scheduled successfully!');
+    setShowScheduleModal(false);
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -206,14 +164,14 @@ export const LiveClassesView: React.FC = () => {
 
             <form onSubmit={handleSchedule} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Target Course</label>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Target Batch</label>
                 <select
                   value={batchId}
                   onChange={(e) => setBatchId(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white"
                 >
-                  {courses.map((b) => (
-                    <option key={b.id} value={b.id}>{b.title}</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
               </div>

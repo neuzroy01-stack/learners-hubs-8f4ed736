@@ -1,9 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/db';
+import { Assignment, Submission } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import { useCourseScope } from '../../hooks/useCourseScope';
-import { assignmentsApi, submissionsApi, type CloudAssignment } from '../../services/cloudDb';
-import { profilesApi } from '../../services/cloudProfiles';
-import { supabase } from '@/integrations/supabase/client';
 import {
   FileCheck,
   Plus,
@@ -21,124 +19,66 @@ import {
   MessageSquare
 } from 'lucide-react';
 
-type SubCard = {
-  id: string;
-  assignmentId: string;
-  studentId: string;
-  studentName: string;
-  submittedAt: string;
-  content: string;
-  fileUrl: string;
-  status: string;
-  marksObtained?: number | null;
-  feedback?: string | null;
-};
-
-type AsgCard = {
-  id: string;
-  courseId: string;
-  title: string;
-  description: string;
-  dueDate: string;
-  maxMarks: number;
-  attachmentUrl: string | null;
-  submissions: SubCard[];
-};
-
 export const AssignmentsView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const { courses, courseIds, isStaff, userId, loading: scopeLoading } = useCourseScope();
-  const [assignments, setAssignments] = useState<AsgCard[]>([]);
-  const [selectedAssignment, setSelectedAssignment] = useState<AsgCard | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [gradingMarks, setGradingMarks] = useState<number>(0);
   const [gradingFeedback, setGradingFeedback] = useState('');
-  const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<SubCard | null>(null);
+  const [selectedStudentSubmission, setSelectedStudentSubmission] = useState<Submission | null>(null);
 
-  const isTeacherOrAdmin = isStaff;
+  const isTeacherOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
   const isStudent = currentRole === 'student';
 
-  const loadAssignments = useCallback(async () => {
-    if (courseIds.length === 0) {
-      setAssignments([]);
-      return;
-    }
-    const rows = (await assignmentsApi.listForCourses(courseIds)) as CloudAssignment[];
-    const visible = isStaff ? rows : rows.filter((r) => r.is_published);
-    if (visible.length === 0) {
-      setAssignments([]);
-      return;
-    }
-    const { data: subs } = await supabase
-      .from('assignment_submissions')
-      .select('*')
-      .in('assignment_id', visible.map((a) => a.id));
-    const studentIds = [...new Set((subs ?? []).map((s) => s.student_id))];
-    const names = new Map<string, string>();
-    await Promise.all(
-      studentIds.map(async (id) => {
-        const p = await profilesApi.get(id).catch(() => null);
-        if (p) names.set(id, p.full_name);
-      })
-    );
-    setAssignments(
-      visible.map((a) => ({
-        id: a.id,
-        courseId: a.course_id,
-        title: a.title,
-        description: a.instructions || '',
-        dueDate: a.due_at ? new Date(a.due_at).toISOString().split('T')[0] : '—',
-        maxMarks: a.max_marks,
-        attachmentUrl: a.attachment_url,
-        submissions: (subs ?? [])
-          .filter((s) => s.assignment_id === a.id)
-          .map((s) => ({
-            id: s.id,
-            assignmentId: s.assignment_id,
-            studentId: s.student_id,
-            studentName: names.get(s.student_id) ?? 'Student',
-            submittedAt: new Date(s.submitted_at).toISOString().split('T')[0],
-            content: s.submission_text ?? '',
-            fileUrl: s.file_url ?? '',
-            status: s.status,
-            marksObtained: s.marks_obtained,
-            feedback: s.feedback,
-          })),
-      }))
-    );
-  }, [courseIds.join(','), isStaff]);
-
   useEffect(() => {
-    if (!scopeLoading) void loadAssignments();
-  }, [scopeLoading, loadAssignments]);
+    loadAssignments();
+    const unsub = db.subscribe(() => loadAssignments());
+    return unsub;
+  }, []);
 
-  const handleStudentSubmit = async (e: React.FormEvent) => {
+  const loadAssignments = () => {
+    setAssignments(db.getAssignments());
+  };
+
+  const handleStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAssignment || !userId) return;
+    if (!selectedAssignment || !currentUser) return;
 
-    await submissionsApi.submit({
-      assignment_id: selectedAssignment.id,
-      student_id: userId,
-      submission_text: submissionText,
-      file_url: attachmentUrl || null,
-      status: 'submitted',
-    });
+    const submission: Submission = {
+      id: `sub-${Date.now()}`,
+      assignmentId: selectedAssignment.id,
+      studentId: currentUser.id,
+      studentName: currentUser.name,
+      submittedAt: new Date().toISOString().split('T')[0],
+      content: submissionText,
+      fileUrl: attachmentUrl || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      status: 'submitted'
+    };
+
+    db.submitAssignment(selectedAssignment.id, submission);
+    alert('Assignment submitted successfully!');
     setSubmissionText('');
     setAttachmentUrl('');
     setSelectedAssignment(null);
-    await loadAssignments();
   };
 
-  const handleGradeSubmission = async (e: React.FormEvent) => {
+  const handleGradeSubmission = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAssignment || !selectedStudentSubmission) return;
-    await submissionsApi.grade(selectedStudentSubmission.id, gradingMarks, gradingFeedback);
-    setSelectedStudentSubmission(null);
-    setSelectedAssignment(null);
-    await loadAssignments();
-  };
 
+    const updatedSubmission: Submission = {
+      ...selectedStudentSubmission,
+      marksObtained: gradingMarks,
+      feedback: gradingFeedback,
+      status: 'graded'
+    };
+
+    db.submitAssignment(selectedAssignment.id, updatedSubmission);
+    alert('Grade & Feedback saved!');
+    setSelectedStudentSubmission(null);
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -156,32 +96,24 @@ export const AssignmentsView: React.FC = () => {
 
         {isTeacherOrAdmin && (
           <button
-            onClick={async () => {
-              if (courses.length === 0) {
-                alert('Create a course first.');
-                return;
-              }
-              const courseTitle = prompt(
-                `Course for this assignment:\n${courses.map((c, i) => `${i + 1}. ${c.title}`).join('\n')}\n\nEnter number`,
-                '1'
-              );
-              const course = courses[Number(courseTitle) - 1];
-              if (!course) return;
-              const title = prompt('Assignment title');
-              if (!title) return;
-              const description = prompt('Instructions') || '';
-              const dueDate = prompt('Due date (YYYY-MM-DD)') || '';
-              const maxMarks = Number(prompt('Max marks', '100') || 100);
-              await assignmentsApi.create({
-                course_id: course.id,
-                title,
-                instructions: description,
-                due_at: dueDate ? new Date(dueDate).toISOString() : null,
-                max_marks: maxMarks,
-                created_by: currentUser?.id ?? null,
-                is_published: true,
-              });
-              await loadAssignments();
+            onClick={() => {
+              const newAsg: Assignment = {
+                id: `asg-${Date.now()}`,
+                courseId: 'course-yt-master-101',
+                courseTitle: 'YouTube All Creator Master Program 2026',
+                batchId: 'batch-yt-1',
+                batchName: 'Batch A 2026',
+                teacherId: 'usr-teacher',
+                teacherName: currentUser?.name || 'Faculty Lead',
+                title: 'Live Case Study: 0-100K Subscriber Channel Growth Blueprint',
+                description: 'Analyze audience retention graphs, CTR metrics, and create a 30-day content calendar with thumbnail drafts.',
+                dueDate: '2026-08-10',
+                maxMarks: 100,
+                attachmentUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+                status: 'active',
+                submissions: []
+              };
+              db.saveAssignment(newAsg);
             }}
             className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >

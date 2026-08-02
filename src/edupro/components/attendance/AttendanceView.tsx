@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '../../services/db';
+import { AttendanceRecord, Batch, StudentProfile } from '../../types/lms';
 import { useAuth } from '../../context/AuthContext';
-import { useCourseScope } from '../../hooks/useCourseScope';
-import { attendanceApi, enrollmentsApi, type CloudAttendance } from '../../services/cloudDb';
-import { profilesApi, type CloudProfileRow } from '../../services/cloudProfiles';
 import {
   FileSpreadsheet,
   CheckCircle2,
@@ -16,84 +15,63 @@ import {
   X
 } from 'lucide-react';
 
-type AttStatus = 'present' | 'absent' | 'late' | 'leave';
-
 export const AttendanceView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const { courses, isStaff, userId, loading: scopeLoading } = useCourseScope();
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [studentsInBatch, setStudentsInBatch] = useState<CloudProfileRow[]>([]);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttStatus>>({});
-  const [myRecords, setMyRecords] = useState<CloudAttendance[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [studentsInBatch, setStudentsInBatch] = useState<StudentProfile[]>([]);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
 
-  const isFacultyOrAdmin = isStaff;
+  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
   const isStudent = currentRole === 'student';
 
+  const batches = db.getBatches();
+  const allStudents = db.getStudents();
+
   useEffect(() => {
-    if (!selectedCourseId && courses.length > 0) setSelectedCourseId(courses[0].id);
-    if (courses.length === 0) setSelectedCourseId('');
-  }, [courses, selectedCourseId]);
-
-  /** Staff: roster + that day's marks. Student: own history. */
-  const load = useCallback(async () => {
-    if (isStudent) {
-      setMyRecords(userId ? await attendanceApi.listByStudent(userId) : []);
-      return;
+    if (batches.length > 0 && !selectedBatchId) {
+      setSelectedBatchId(batches[0].id);
     }
-    if (!selectedCourseId) {
-      setStudentsInBatch([]);
-      setAttendanceMap({});
-      return;
-    }
-    const enrollments = await enrollmentsApi.listByCourse(selectedCourseId);
-    const active = enrollments.filter((e) => e.status === 'active');
-    const profiles = (
-      await Promise.all(active.map((e) => profilesApi.get(e.student_id).catch(() => null)))
-    ).filter(Boolean) as CloudProfileRow[];
-    setStudentsInBatch(profiles);
+  }, [batches]);
 
-    const existing = await attendanceApi.listByCourse(selectedCourseId, selectedDate);
-    const map: Record<string, AttStatus> = {};
-    profiles.forEach((p) => {
-      const rec = existing.find((r) => r.student_id === p.id);
-      map[p.id] = ((rec?.status as AttStatus) ?? 'present');
+  useEffect(() => {
+    if (!selectedBatchId) return;
+
+    // Load students in batch
+    const batchStudents = allStudents.filter((s) => s.batchId === selectedBatchId || !s.batchId);
+    setStudentsInBatch(batchStudents);
+
+    // Load existing attendance records for date & batch
+    const records = db.getAttendance().filter((a) => a.batchId === selectedBatchId && a.date === selectedDate);
+    setAttendanceRecords(db.getAttendance());
+
+    const map: Record<string, 'present' | 'absent' | 'late' | 'leave'> = {};
+    batchStudents.forEach((stu) => {
+      const existing = records.find((r) => r.studentId === stu.id);
+      map[stu.id] = existing ? existing.status : 'present';
     });
     setAttendanceMap(map);
-  }, [isStudent, userId, selectedCourseId, selectedDate]);
+  }, [selectedBatchId, selectedDate]);
 
-  useEffect(() => {
-    if (!scopeLoading) void load();
-  }, [scopeLoading, load]);
+  const handleSaveAttendance = () => {
+    const recordsToSave = studentsInBatch.map((stu) => ({
+      studentId: stu.id,
+      studentName: stu.fullName,
+      status: attendanceMap[stu.id] || 'present',
+      remarks: 'Batch daily check-in'
+    }));
 
-  const handleSaveAttendance = async () => {
-    if (!selectedCourseId || studentsInBatch.length === 0) return;
-    setSaving(true);
-    try {
-      await attendanceApi.mark(
-        studentsInBatch.map((stu) => ({
-          course_id: selectedCourseId,
-          student_id: stu.id,
-          attendance_date: selectedDate,
-          status: attendanceMap[stu.id] || 'present',
-          marked_by: userId,
-        }))
-      );
-      await load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not save attendance');
-    } finally {
-      setSaving(false);
-    }
+    db.markBatchAttendance(selectedDate, selectedBatchId, recordsToSave, currentUser?.name || 'Faculty Marker');
+    alert(`Attendance marked successfully for ${recordsToSave.length} students!`);
   };
 
-  // Student attendance analytics — straight from the database.
-  const myAttendanceRecords = myRecords;
+  // Student Attendance Analytics Calculation
+  const studentProfile = isStudent && currentUser ? db.getStudentByUserId(currentUser.id) : null;
+  const myAttendanceRecords = studentProfile ? attendanceRecords.filter((a) => a.studentId === studentProfile.id) : [];
   const presentCount = myAttendanceRecords.filter((a) => a.status === 'present').length;
   const totalClasses = myAttendanceRecords.length;
-  const attendancePercentage = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 0;
-
+  const attendancePercentage = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 100;
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -125,14 +103,14 @@ export const AttendanceView: React.FC = () => {
           {/* Controls Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
             <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Course</label>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Batch</label>
               <select
-                value={selectedCourseId}
-                onChange={(e) => setSelectedCourseId(e.target.value)}
+                value={selectedBatchId}
+                onChange={(e) => setSelectedBatchId(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
               >
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.title}</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </div>
@@ -161,14 +139,10 @@ export const AttendanceView: React.FC = () => {
                 return (
                   <div key={stu.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <div className="flex items-center space-x-3">
-                      <img
-                        src={stu.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(stu.full_name)}`}
-                        alt={stu.full_name}
-                        className="w-9 h-9 rounded-xl object-cover"
-                      />
+                      <img src={stu.photoUrl} alt={stu.fullName} className="w-9 h-9 rounded-xl object-cover" />
                       <div>
-                        <div className="text-xs font-bold text-slate-900 dark:text-white">{stu.full_name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{stu.phone || stu.email || ''}</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white">{stu.fullName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{stu.studentCode}</div>
                       </div>
                     </div>
 
@@ -226,7 +200,7 @@ export const AttendanceView: React.FC = () => {
               ) : (
                 myAttendanceRecords.map((r) => (
                   <div key={r.id} className="py-3 flex items-center justify-between text-xs">
-                    <span className="font-mono text-slate-600 dark:text-slate-300">{r.attendance_date}</span>
+                    <span className="font-mono text-slate-600 dark:text-slate-300">{r.date}</span>
                     <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${
                       r.status === 'present' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                     }`}>
