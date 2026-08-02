@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../../services/db';
-import { AttendanceRecord, Batch, StudentProfile } from '../../types/lms';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useCourseScope } from '../../hooks/useCourseScope';
+import { attendanceApi, enrollmentsApi, type CloudAttendance } from '../../services/cloudDb';
+import { profilesApi, type CloudProfileRow } from '../../services/cloudProfiles';
 import {
   FileSpreadsheet,
   CheckCircle2,
@@ -15,63 +16,84 @@ import {
   X
 } from 'lucide-react';
 
+type AttStatus = 'present' | 'absent' | 'late' | 'leave';
+
 export const AttendanceView: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
-  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const { courses, isStaff, userId, loading: scopeLoading } = useCourseScope();
+  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [studentsInBatch, setStudentsInBatch] = useState<StudentProfile[]>([]);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [studentsInBatch, setStudentsInBatch] = useState<CloudProfileRow[]>([]);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttStatus>>({});
+  const [myRecords, setMyRecords] = useState<CloudAttendance[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const isFacultyOrAdmin = isStaff;
   const isStudent = currentRole === 'student';
 
-  const batches = db.getBatches();
-  const allStudents = db.getStudents();
-
   useEffect(() => {
-    if (batches.length > 0 && !selectedBatchId) {
-      setSelectedBatchId(batches[0].id);
+    if (!selectedCourseId && courses.length > 0) setSelectedCourseId(courses[0].id);
+    if (courses.length === 0) setSelectedCourseId('');
+  }, [courses, selectedCourseId]);
+
+  /** Staff: roster + that day's marks. Student: own history. */
+  const load = useCallback(async () => {
+    if (isStudent) {
+      setMyRecords(userId ? await attendanceApi.listByStudent(userId) : []);
+      return;
     }
-  }, [batches]);
+    if (!selectedCourseId) {
+      setStudentsInBatch([]);
+      setAttendanceMap({});
+      return;
+    }
+    const enrollments = await enrollmentsApi.listByCourse(selectedCourseId);
+    const active = enrollments.filter((e) => e.status === 'active');
+    const profiles = (
+      await Promise.all(active.map((e) => profilesApi.get(e.student_id).catch(() => null)))
+    ).filter(Boolean) as CloudProfileRow[];
+    setStudentsInBatch(profiles);
 
-  useEffect(() => {
-    if (!selectedBatchId) return;
-
-    // Load students in batch
-    const batchStudents = allStudents.filter((s) => s.batchId === selectedBatchId || !s.batchId);
-    setStudentsInBatch(batchStudents);
-
-    // Load existing attendance records for date & batch
-    const records = db.getAttendance().filter((a) => a.batchId === selectedBatchId && a.date === selectedDate);
-    setAttendanceRecords(db.getAttendance());
-
-    const map: Record<string, 'present' | 'absent' | 'late' | 'leave'> = {};
-    batchStudents.forEach((stu) => {
-      const existing = records.find((r) => r.studentId === stu.id);
-      map[stu.id] = existing ? existing.status : 'present';
+    const existing = await attendanceApi.listByCourse(selectedCourseId, selectedDate);
+    const map: Record<string, AttStatus> = {};
+    profiles.forEach((p) => {
+      const rec = existing.find((r) => r.student_id === p.id);
+      map[p.id] = ((rec?.status as AttStatus) ?? 'present');
     });
     setAttendanceMap(map);
-  }, [selectedBatchId, selectedDate]);
+  }, [isStudent, userId, selectedCourseId, selectedDate]);
 
-  const handleSaveAttendance = () => {
-    const recordsToSave = studentsInBatch.map((stu) => ({
-      studentId: stu.id,
-      studentName: stu.fullName,
-      status: attendanceMap[stu.id] || 'present',
-      remarks: 'Batch daily check-in'
-    }));
+  useEffect(() => {
+    if (!scopeLoading) void load();
+  }, [scopeLoading, load]);
 
-    db.markBatchAttendance(selectedDate, selectedBatchId, recordsToSave, currentUser?.name || 'Faculty Marker');
-    alert(`Attendance marked successfully for ${recordsToSave.length} students!`);
+  const handleSaveAttendance = async () => {
+    if (!selectedCourseId || studentsInBatch.length === 0) return;
+    setSaving(true);
+    try {
+      await attendanceApi.mark(
+        studentsInBatch.map((stu) => ({
+          course_id: selectedCourseId,
+          student_id: stu.id,
+          attendance_date: selectedDate,
+          status: attendanceMap[stu.id] || 'present',
+          marked_by: userId,
+        }))
+      );
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save attendance');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Student Attendance Analytics Calculation
-  const studentProfile = isStudent && currentUser ? db.getStudentByUserId(currentUser.id) : null;
-  const myAttendanceRecords = studentProfile ? attendanceRecords.filter((a) => a.studentId === studentProfile.id) : [];
+  // Student attendance analytics — straight from the database.
+  const myAttendanceRecords = myRecords;
   const presentCount = myAttendanceRecords.filter((a) => a.status === 'present').length;
   const totalClasses = myAttendanceRecords.length;
-  const attendancePercentage = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 100;
+  const attendancePercentage = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 0;
+
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
