@@ -156,24 +156,32 @@ export const AssignmentsView: React.FC = () => {
 
         {isTeacherOrAdmin && (
           <button
-            onClick={() => {
-              const newAsg: Assignment = {
-                id: `asg-${Date.now()}`,
-                courseId: 'course-yt-master-101',
-                courseTitle: 'YouTube All Creator Master Program 2026',
-                batchId: 'batch-yt-1',
-                batchName: 'Batch A 2026',
-                teacherId: 'usr-teacher',
-                teacherName: currentUser?.name || 'Faculty Lead',
-                title: 'Live Case Study: 0-100K Subscriber Channel Growth Blueprint',
-                description: 'Analyze audience retention graphs, CTR metrics, and create a 30-day content calendar with thumbnail drafts.',
-                dueDate: '2026-08-10',
-                maxMarks: 100,
-                attachmentUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-                status: 'active',
-                submissions: []
-              };
-              db.saveAssignment(newAsg);
+            onClick={async () => {
+              if (courses.length === 0) {
+                alert('Create a course first.');
+                return;
+              }
+              const courseTitle = prompt(
+                `Course for this assignment:\n${courses.map((c, i) => `${i + 1}. ${c.title}`).join('\n')}\n\nEnter number`,
+                '1'
+              );
+              const course = courses[Number(courseTitle) - 1];
+              if (!course) return;
+              const title = prompt('Assignment title');
+              if (!title) return;
+              const description = prompt('Instructions') || '';
+              const dueDate = prompt('Due date (YYYY-MM-DD)') || '';
+              const maxMarks = Number(prompt('Max marks', '100') || 100);
+              await assignmentsApi.create({
+                course_id: course.id,
+                title,
+                instructions: description,
+                due_at: dueDate ? new Date(dueDate).toISOString() : null,
+                max_marks: maxMarks,
+                created_by: currentUser?.id ?? null,
+                is_published: true,
+              });
+              await loadAssignments();
             }}
             className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
