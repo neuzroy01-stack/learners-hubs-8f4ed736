@@ -206,14 +206,14 @@ export const LiveClassesView: React.FC = () => {
 
             <form onSubmit={handleSchedule} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Target Batch</label>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Target Course</label>
                 <select
                   value={batchId}
                   onChange={(e) => setBatchId(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white"
                 >
-                  {batches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
+                  {courses.map((b) => (
+                    <option key={b.id} value={b.id}>{b.title}</option>
                   ))}
                 </select>
               </div>
