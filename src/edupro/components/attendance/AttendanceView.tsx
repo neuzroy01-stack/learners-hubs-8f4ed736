@@ -161,10 +161,14 @@ export const AttendanceView: React.FC = () => {
                 return (
                   <div key={stu.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <div className="flex items-center space-x-3">
-                      <img src={stu.photoUrl} alt={stu.fullName} className="w-9 h-9 rounded-xl object-cover" />
+                      <img
+                        src={stu.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(stu.full_name)}`}
+                        alt={stu.full_name}
+                        className="w-9 h-9 rounded-xl object-cover"
+                      />
                       <div>
-                        <div className="text-xs font-bold text-slate-900 dark:text-white">{stu.fullName}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{stu.studentCode}</div>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white">{stu.full_name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{stu.phone || stu.email || ''}</div>
                       </div>
                     </div>
 
