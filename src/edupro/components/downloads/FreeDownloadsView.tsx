@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../../services/db';
-import { StudyMaterial } from '../../types/lms';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useCourseScope } from '../../hooks/useCourseScope';
+import { materialsApi, type CloudMaterial } from '../../services/cloudDb';
 import {
   FolderDown,
   FileText,
@@ -15,27 +15,52 @@ import {
   BookOpen
 } from 'lucide-react';
 
+type MaterialCard = {
+  id: string;
+  title: string;
+  category: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedBy: string;
+};
+
 export const FreeDownloadsView: React.FC = () => {
   const { currentRole } = useAuth();
-  const [materials, setMaterials] = useState<StudyMaterial[]>([]);
+  const { courses, courseIds, isStaff, loading: scopeLoading } = useCourseScope();
+  const [materials, setMaterials] = useState<MaterialCard[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const isTeacherOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const isTeacherOrAdmin = isStaff;
+
+  const loadMaterials = useCallback(async () => {
+    if (courseIds.length === 0) {
+      setMaterials([]);
+      return;
+    }
+    const rows = (await materialsApi.listForCourses(courseIds)) as CloudMaterial[];
+    const visible = isStaff ? rows : rows.filter((r) => r.is_published);
+    const titleOf = new Map(courses.map((c) => [c.id, c.title]));
+    setMaterials(
+      visible.map((r) => ({
+        id: r.id,
+        title: r.title,
+        category: r.file_type,
+        fileName: r.description || r.file_url.split('/').pop() || r.title,
+        fileUrl: r.file_url,
+        uploadedBy: titleOf.get(r.course_id) ?? 'Course',
+      }))
+    );
+  }, [courseIds.join(','), isStaff, courses]);
 
   useEffect(() => {
-    loadMaterials();
-    const unsub = db.subscribe(() => loadMaterials());
-    return unsub;
-  }, []);
+    if (!scopeLoading) void loadMaterials();
+  }, [scopeLoading, loadMaterials]);
 
-  const loadMaterials = () => {
-    setMaterials(db.getStudyMaterials());
-  };
-
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this study material?')) {
-      db.deleteStudyMaterial(id);
+      await materialsApi.remove(id);
+      await loadMaterials();
     }
   };
 
@@ -44,6 +69,7 @@ export const FreeDownloadsView: React.FC = () => {
     const matchesCat = selectedCategory === 'all' || m.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
+
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
