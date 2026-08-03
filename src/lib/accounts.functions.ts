@@ -1,38 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  createSchema,
+  digits,
+  passwordChangeSchema,
+  signInSchema,
+  statusSchema,
+  syntheticEmail,
+  updateSchema,
+  type CloudProfile,
+} from "./accounts.shared";
+import type { z } from "zod";
 
-const digits = (v: string) => v.replace(/[^0-9]/g, "");
-
-/** Every account needs an email for auth; students often only have a phone. */
-export const syntheticEmail = (phone: string) => `s${digits(phone)}@accounts.learnerhub.app`;
-
-const identifierSchema = z.string().trim().min(3).max(120);
-const passwordSchema = z.string().min(6).max(128);
-
-export type CloudProfile = {
-  id: string;
-  full_name: string;
-  father_name: string | null;
-  phone: string | null;
-  email: string | null;
-  role: "super_admin" | "admin" | "teacher" | "student";
-  status: string;
-  photo_url: string | null;
-  batch_id: string | null;
-  course_id: string | null;
-};
+export type { CloudProfile } from "./accounts.shared";
+export { syntheticEmail } from "./accounts.shared";
 
 /**
  * Sign in with a phone number, student id or email + password.
  * Runs server-side so the phone -> email mapping never leaks to the browser.
  */
 export const signIn = createServerFn({ method: "POST" })
-  .inputValidator((input: { identifier: string; password: string; staff?: boolean }) =>
-    z
-      .object({ identifier: identifierSchema, password: passwordSchema, staff: z.boolean().optional() })
-      .parse(input),
-  )
+  .inputValidator((input: z.input<typeof signInSchema>) => signInSchema.parse(input))
   .handler(async ({ data }) => {
     const { createPublicServerClient } = await import("./supabase-public.server");
     const supabase = createPublicServerClient();
@@ -52,9 +40,7 @@ export const signIn = createServerFn({ method: "POST" })
     if (!data.staff && profile.role !== "student") return generic;
     if (profile.status !== "active") return { error: "This account is not active. Contact your administrator." };
 
-    const loginEmail = profile.email?.includes("@")
-      ? profile.email
-      : syntheticEmail(profile.phone || phone);
+    const loginEmail = profile.email?.includes("@") ? profile.email : syntheticEmail(profile.phone || phone);
 
     const { data: auth, error } = await supabase.auth.signInWithPassword({
       email: loginEmail,
@@ -65,28 +51,13 @@ export const signIn = createServerFn({ method: "POST" })
     return { session: auth.session, profile };
   });
 
-const createSchema = z.object({
-  fullName: z.string().trim().min(2).max(120),
-  fatherName: z.string().trim().max(120).optional(),
-  phone: z.string().trim().min(6).max(20),
-  email: z.string().trim().email().max(160).optional().or(z.literal("")),
-  password: passwordSchema,
-  role: z.enum(["super_admin", "admin", "teacher", "student"]),
-  batchId: z.string().trim().max(60).optional(),
-  courseId: z.string().trim().max(60).optional(),
-  legacyId: z.string().trim().max(60).optional(),
-});
-
 /** Super Admin / Admin creates a real cloud account that works on any device. */
 export const createAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: z.input<typeof createSchema>) => createSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const { data: isSuper } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "super_admin",
-    });
-    const { data: isAdmin } = await context.supabase.rpc("is_staff_admin", { _user_id: context.userId });
+    const { resolvePowers } = await import("./accounts.server");
+    const { isAdmin, isSuper } = await resolvePowers(context.supabase as never, context.userId);
     if (!isAdmin) return { error: "You are not allowed to create accounts." };
     if (data.role !== "student" && !isSuper) {
       return { error: "Only a Super Admin can create staff accounts." };
@@ -132,14 +103,10 @@ export const createAccount = createServerFn({ method: "POST" })
 /** Only a Super Admin may change someone's password. */
 export const setAccountPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { userId: string; password: string }) =>
-    z.object({ userId: z.string().uuid(), password: passwordSchema }).parse(input),
-  )
+  .inputValidator((input: z.input<typeof passwordChangeSchema>) => passwordChangeSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const { data: isSuper } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "super_admin",
-    });
+    const { resolvePowers } = await import("./accounts.server");
+    const { isSuper } = await resolvePowers(context.supabase as never, context.userId);
     if (!isSuper) return { error: "Only a Super Admin can change passwords." };
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -149,11 +116,105 @@ export const setAccountPassword = createServerFn({ method: "POST" })
     return error ? { error: error.message } : { ok: true };
   });
 
+/** Full account directory for admin screens (read through the server, never the browser). */
+export const listAccounts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { resolvePowers } = await import("./accounts.server");
+    const { isAdmin } = await resolvePowers(context.supabase as never, context.userId);
+    if (!isAdmin) return { error: "You are not allowed to view accounts.", accounts: [] as CloudProfile[] };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, father_name, phone, email, role, status, photo_url, batch_id, course_id")
+      .order("full_name");
+    if (error) return { error: error.message, accounts: [] as CloudProfile[] };
+    return { accounts: (data ?? []) as CloudProfile[] };
+  });
+
+/** Edits an existing account. Role and staff edits are Super Admin only. */
+export const updateAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: z.input<typeof updateSchema>) => updateSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { resolvePowers } = await import("./accounts.server");
+    const { isAdmin, isSuper } = await resolvePowers(context.supabase as never, context.userId);
+    if (!isAdmin) return { error: "You are not allowed to edit accounts." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existingRows } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role, phone, email")
+      .eq("id", data.userId)
+      .limit(1);
+    const existing = existingRows?.[0];
+    if (!existing) return { error: "Account not found." };
+    if (existing.role !== data.role && !isSuper) return { error: "Only a Super Admin can change a user's role." };
+    if (existing.role !== "student" && !isSuper) return { error: "Only a Super Admin can edit staff accounts." };
+
+    const phone = digits(data.phone);
+    const { data: clash } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("phone", phone)
+      .neq("id", data.userId)
+      .limit(1);
+    if (clash?.length) return { error: "Another account already uses this phone number." };
+
+    const loginEmail = data.email && data.email.includes("@") ? data.email : syntheticEmail(phone);
+
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        full_name: data.fullName,
+        father_name: data.fatherName || null,
+        phone,
+        email: loginEmail,
+        role: data.role,
+        batch_id: data.batchId || null,
+        course_id: data.courseId || null,
+      })
+      .eq("id", data.userId);
+    if (error) return { error: error.message };
+
+    // Keep the auth login e-mail in sync so sign-in never drifts from the profile.
+    if (loginEmail !== existing.email) {
+      await supabaseAdmin.auth.admin.updateUserById(data.userId, { email: loginEmail, email_confirm: true });
+    }
+    if (existing.role !== data.role) {
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
+      await supabaseAdmin.from("user_roles").insert({ user_id: data.userId, role: data.role });
+    }
+    return { ok: true };
+  });
+
+/**
+ * Soft delete: deactivating blocks sign-in but keeps fees, attendance and
+ * results intact. Reactivating restores access.
+ */
+export const setAccountStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: z.input<typeof statusSchema>) => statusSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { resolvePowers } = await import("./accounts.server");
+    const { isAdmin, isSuper } = await resolvePowers(context.supabase as never, context.userId);
+    if (!isAdmin) return { error: "You are not allowed to change account status." };
+    if (data.userId === context.userId) return { error: "You cannot deactivate your own account." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin.from("profiles").select("role").eq("id", data.userId).limit(1);
+    const target = rows?.[0];
+    if (!target) return { error: "Account not found." };
+    if (target.role !== "student" && !isSuper) return { error: "Only a Super Admin can deactivate staff accounts." };
+
+    const { error } = await supabaseAdmin.from("profiles").update({ status: data.status }).eq("id", data.userId);
+    return error ? { error: error.message } : { ok: true };
+  });
+
 /** One-time bootstrap: creates the first Super Admin when none exists yet. */
 export const bootstrapSuperAdmin = createServerFn({ method: "POST" })
-  .inputValidator((input: z.input<typeof createSchema>) =>
-    createSchema.parse({ ...input, role: "super_admin" }),
-  )
+  .inputValidator((input: z.input<typeof createSchema>) => createSchema.parse({ ...input, role: "super_admin" }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { count } = await supabaseAdmin

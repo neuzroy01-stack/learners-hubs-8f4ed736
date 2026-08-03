@@ -1,320 +1,297 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../../services/db';
-import { Course, RecordedClass } from '../../types/lms';
-import { useAuth } from '../../context/AuthContext';
-import { Video, Play, Lock, Clock as Unlock, CircleCheck as CheckCircle, FileText, Clock, ChevronDown, ChevronRight, Plus, CreditCard as Edit2, Trash2, ExternalLink, Search, TriangleAlert as AlertTriangle, Youtube } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Video, Plus, Pencil, Trash2, RefreshCw, X, Youtube, TriangleAlert as AlertTriangle } from 'lucide-react';
+import { lecturesApi, type CloudLecture } from '../../services/cloudDb';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { useCourseScope } from '../../hooks/useCourseScope';
+import { useFeedback } from '../common/Feedback';
 
 /**
  * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
- * iframe-embeddable `https://www.youtube.com/embed/VIDEO_ID` form. YouTube
- * refuses to connect when a `watch?v=` URL is loaded inside an iframe, so
- * every recorded lecture must be normalised before it reaches the player.
- * Returns `null` when the URL is not a YouTube link.
+ * iframe-embeddable form. YouTube refuses `watch?v=` links inside an iframe.
  */
-function toYouTubeEmbedUrl(rawUrl: string): string | null {
+export function toYouTubeEmbedUrl(rawUrl: string): string | null {
   if (!rawUrl) return null;
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.replace(/^www\./, '');
     let id: string | null = null;
-
-    if (host === 'youtu.be') {
-      id = parsed.pathname.slice(1).split('/')[0] || null;
-    } else if (host.endsWith('youtube.com')) {
-      if (parsed.pathname === '/watch') {
-        id = parsed.searchParams.get('v');
-      } else if (parsed.pathname.startsWith('/embed/')) {
-        id = parsed.pathname.split('/')[2] || null;
-      } else if (parsed.pathname.startsWith('/live/')) {
-        id = parsed.pathname.split('/')[2] || null;
-      } else if (parsed.pathname.startsWith('/shorts/')) {
-        id = parsed.pathname.split('/')[2] || null;
-      } else if (parsed.pathname.startsWith('/v/')) {
-        id = parsed.pathname.split('/')[2] || null;
-      }
+    if (host === 'youtu.be') id = parsed.pathname.slice(1).split('/')[0] || null;
+    else if (host.endsWith('youtube.com')) {
+      if (parsed.pathname === '/watch') id = parsed.searchParams.get('v');
+      else if (/^\/(embed|live|shorts|v)\//.test(parsed.pathname)) id = parsed.pathname.split('/')[2] || null;
     }
-
-    if (!id) return null;
-    // Preserve rel=0 to keep the player from suggesting unrelated videos.
-    return `https://www.youtube.com/embed/${id}?rel=0`;
+    return id ? `https://www.youtube.com/embed/${id}?rel=0` : null;
   } catch {
     return null;
   }
 }
 
-/** Extracts the 11-char video id so we can link the student straight to YouTube. */
-function toYouTubeWatchUrl(rawUrl: string): string | null {
+export function toYouTubeWatchUrl(rawUrl: string): string | null {
   const embed = toYouTubeEmbedUrl(rawUrl);
-  if (!embed) return null;
-  const id = embed.split('/embed/')[1]?.split('?')[0];
+  const id = embed?.split('/embed/')[1]?.split('?')[0];
   return id ? `https://www.youtube.com/watch?v=${id}` : null;
 }
 
+interface FormState {
+  id?: string;
+  title: string;
+  description: string;
+  video_url: string;
+  week_number: number;
+  duration_minutes: string;
+  is_published: boolean;
+}
+
+const emptyForm = (week: number): FormState => ({
+  title: '',
+  description: '',
+  video_url: '',
+  week_number: week,
+  duration_minutes: '',
+  is_published: true,
+});
+
+/** Week-wise recorded lecture archive, managed entirely from the database. */
 export const RecordedLecturesView: React.FC = () => {
-  const { currentUser, currentRole } = useAuth();
-  const [recordedClasses, setRecordedClasses] = useState<RecordedClass[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<RecordedClass | null>(null);
-  const [selectedWeek, setSelectedWeek] = useState<number>(1);
-  const [search, setSearch] = useState('');
-  const [embedFailed, setEmbedFailed] = useState(false);
+  const { notify, confirm } = useFeedback();
+  const { courses, canManage, loading: coursesLoading } = useCourseScope();
 
-  const courses = db.getCourses();
-  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+  const [courseId, setCourseId] = useState('');
+  const activeCourseId = courseId || courses[0]?.id || '';
 
-  // Pre-compute the embeddable URL once per selected video so the iframe never
-  // receives a raw `watch?v=` link (which YouTube refuses inside an iframe).
-  const embedUrl = useMemo(
-    () => (selectedVideo ? toYouTubeEmbedUrl(selectedVideo.videoUrl) : null),
-    [selectedVideo],
+  const { data, loading, error, reload } = useCloudQuery(
+    async () => (activeCourseId ? lecturesApi.listByCourse(activeCourseId) : []),
+    [activeCourseId],
   );
-  const watchUrl = useMemo(
-    () => (selectedVideo ? toYouTubeWatchUrl(selectedVideo.videoUrl) : null),
-    [selectedVideo],
+  const lectures = useMemo(() => (data ?? []) as CloudLecture[], [data]);
+
+  const weeks = useMemo(() => {
+    const set = new Set<number>(lectures.map((l) => l.week_number ?? 1));
+    return [...set].sort((a, b) => a - b);
+  }, [lectures]);
+
+  const [week, setWeek] = useState(1);
+  useEffect(() => {
+    if (weeks.length && !weeks.includes(week)) setWeek(weeks[0]);
+  }, [weeks, week]);
+
+  const weekLectures = useMemo(
+    () => lectures.filter((l) => (l.week_number ?? 1) === week),
+    [lectures, week],
   );
 
-  // Reset the embed-failed flag whenever the student picks a new lecture.
-  useEffect(() => {
-    setEmbedFailed(false);
-  }, [selectedVideo]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
+  const embedUrl = selected ? toYouTubeEmbedUrl(selected.video_url) : null;
+  const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
 
-  useEffect(() => {
-    loadRecordings();
-    const unsub = db.subscribe(() => loadRecordings());
-    return unsub;
-  }, []);
+  const [form, setForm] = useState<FormState | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const loadRecordings = () => {
-    const list = db.getRecordedClasses();
-    setRecordedClasses(list);
-    const weekList = list.filter((r) => (r.weekNumber || 1) === selectedWeek);
-    if (weekList.length > 0) {
-      setSelectedVideo(weekList[0]);
-    } else if (list.length > 0 && !selectedVideo) {
-      setSelectedVideo(list[0]);
+  const openEdit = (row: CloudLecture) =>
+    setForm({
+      id: row.id,
+      title: row.title,
+      description: row.description ?? '',
+      video_url: row.video_url,
+      week_number: row.week_number ?? 1,
+      duration_minutes: row.duration_minutes ? String(row.duration_minutes) : '',
+      is_published: row.is_published,
+    });
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form || !activeCourseId) return;
+    if (!form.title.trim()) return notify('error', 'Title is required');
+    if (!toYouTubeEmbedUrl(form.video_url)) {
+      return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        course_id: activeCourseId,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        video_url: form.video_url.trim(),
+        week_number: form.week_number,
+        duration_minutes: form.duration_minutes ? Number(form.duration_minutes) : null,
+        is_published: form.is_published,
+        sort_order: form.week_number * 100,
+      };
+      if (form.id) await lecturesApi.update(form.id, payload);
+      else await lecturesApi.create(payload);
+      notify('success', form.id ? 'Lecture updated' : 'Lecture added');
+      setWeek(form.week_number);
+      setForm(null);
+      await reload();
+    } catch (err) {
+      notify('error', 'Could not save', (err as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleWeekChange = (wk: number) => {
-    setSelectedWeek(wk);
-    const weekList = recordedClasses.filter((r) => (r.weekNumber || 1) === wk);
-    if (weekList.length > 0) {
-      setSelectedVideo(weekList[0]);
+  const remove = async (row: CloudLecture) => {
+    const res = await confirm({ title: 'Delete lecture?', message: `"${row.title}" will be removed.`, tone: 'danger', confirmLabel: 'Delete' });
+    if (!res.ok) return;
+    try {
+      await lecturesApi.remove(row.id);
+      notify('success', 'Lecture deleted');
+      await reload();
+    } catch (err) {
+      notify('error', 'Could not delete', (err as Error).message);
     }
   };
-
-  const filteredRecordings = recordedClasses.filter((r) => {
-    const matchesSearch = r.title.toLowerCase().includes(search.toLowerCase()) || (r.topic && r.topic.toLowerCase().includes(search.toLowerCase()));
-    return matchesSearch;
-  });
-
-  const activeWeekRecordings = filteredRecordings.filter((r) => (r.weekNumber || 1) === selectedWeek);
-
-  const weekGroups = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+      <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
-            <Video className="w-6 h-6 text-indigo-600" />
-            <span>Recorded Lectures & Week-Wise Archive</span>
+          <h2 className="flex items-center gap-2 text-xl font-extrabold text-slate-900 dark:text-white">
+            <Video className="h-6 w-6 text-indigo-600" /> Recorded Lectures
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Access high-definition recorded sessions, downloadable notes, and week-wise lecture logs.
-          </p>
+          <p className="mt-1 text-xs text-slate-500">Week-wise archive per course, saved in the database.</p>
         </div>
-
-        {isFacultyOrAdmin && (
-          <button
-            onClick={() => {
-              const newRec: RecordedClass = {
-                id: `rec-${Date.now()}`,
-                courseId: courses[0]?.id || 'course-yt-master-101',
-                courseTitle: courses[0]?.title || 'YouTube Master Program',
-                batchId: 'batch-yt-1',
-                title: 'Week 1: Algorithmic Video Creation & YouTube SEO',
-                videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-                durationMinutes: 50,
-                recordingDate: new Date().toISOString().split('T')[0],
-                notesUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
-              };
-              db.getRecordedClasses().push(newRec);
-              loadRecordings();
-            }}
-            className="flex items-center space-x-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Lecture Recording</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => void reload()} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
-        )}
+          {canManage && activeCourseId && (
+            <button onClick={() => setForm(emptyForm(week || 1))} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700">
+              <Plus className="h-4 w-4" /> Add Lecture
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <label className="text-[11px] font-black uppercase text-slate-500">Course</label>
+        <select
+          value={activeCourseId}
+          onChange={(e) => { setCourseId(e.target.value); setSelectedId(null); }}
+          className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+        >
+          {courses.length === 0 && <option value="">{coursesLoading ? 'Loading…' : 'No courses available'}</option>}
+          {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
       </div>
 
-      {/* Week Tabs Selector */}
-      <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-none">
-        {weekGroups.map((wk) => (
-          <button
-            key={wk}
-            onClick={() => handleWeekChange(wk)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-all ${
-              selectedWeek === wk
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50'
-            }`}
-          >
-            Week {wk}
-          </button>
-        ))}
-      </div>
+      {error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
 
-      {/* Main Player + Playlist Split View */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Video Player (2 Cols) */}
-        <div className="lg:col-span-2 space-y-4">
-          {selectedVideo ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-              <div className="aspect-video bg-black relative">
-                {selectedVideo.isLocked && !isFacultyOrAdmin ? (
-                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 text-white space-y-3">
-                    <Lock className="w-12 h-12 text-amber-500 animate-bounce" />
-                    <h3 className="text-base font-bold">Week {selectedVideo.weekNumber} Lecture Locked</h3>
-                    <p className="text-xs text-slate-400 max-w-md">
-                      This lecture recording is locked. Complete previous assignments or verify fee receipts to unlock.
-                    </p>
-                  </div>
-                ) : embedUrl && !embedFailed ? (
+      {weeks.length > 0 && (
+        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-2">
+          {weeks.map((wk) => (
+            <button
+              key={wk}
+              onClick={() => { setWeek(wk); setSelectedId(null); }}
+              className={`shrink-0 rounded-xl px-4 py-2 text-xs font-bold ${week === wk ? 'bg-indigo-600 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'}`}
+            >
+              Week {wk}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          {selected ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="relative aspect-video bg-black">
+                {embedUrl ? (
                   <iframe
                     key={embedUrl}
                     src={embedUrl}
-                    title={selectedVideo.title}
-                    className="w-full h-full border-0"
+                    title={selected.title}
+                    className="h-full w-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
-                    onError={() => setEmbedFailed(true)}
                   />
                 ) : (
-                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 text-white space-y-3">
-                    <AlertTriangle className="w-12 h-12 text-amber-500" />
-                    <h3 className="text-base font-bold">This video can't be played here</h3>
-                    <p className="text-xs text-slate-400 max-w-md">
-                      {embedUrl
-                        ? 'YouTube blocked the embedded player for this video. This usually means the video owner has disabled embedding.'
-                        : 'The video URL could not be recognised as a YouTube link.'}
-                    </p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white">
+                    <AlertTriangle className="h-10 w-10 text-amber-500" />
+                    <p className="text-xs text-slate-300">This video link could not be recognised as a YouTube URL.</p>
                     {watchUrl && (
-                      <a
-                        href={watchUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors"
-                      >
-                        <Youtube className="w-4 h-4" /> Open on YouTube
+                      <a href={watchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold">
+                        <Youtube className="h-4 w-4" /> Open on YouTube
                       </a>
                     )}
                   </div>
                 )}
               </div>
-
               <div className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
-                    Week {selectedVideo.weekNumber} Lecture
-                  </span>
-                  <span className="text-xs text-slate-400 flex items-center space-x-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{selectedVideo.durationMinutes} Minutes</span>
-                  </span>
-                </div>
-
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{selectedVideo.title}</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{selectedVideo.topic}</p>
-
-                {selectedVideo.notesPdfUrl && (
-                  <a
-                    href={selectedVideo.notesPdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-colors"
-                  >
-                    <FileText className="w-4 h-4 text-rose-500" />
-                    <span>Download Lecture PDF Notes & Slides</span>
-                    <ExternalLink className="w-3 h-3 ml-1" />
-                  </a>
-                )}
-
-                {watchUrl && (
-                  <a
-                    href={watchUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-2 inline-flex items-center space-x-2 px-4 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-900 transition-colors"
-                  >
-                    <Youtube className="w-4 h-4" />
-                    <span>Open on YouTube</span>
-                    <ExternalLink className="w-3 h-3 ml-1" />
-                  </a>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">{selected.title}</h3>
+                {selected.description && <p className="mt-1 text-xs text-slate-500">{selected.description}</p>}
+                {canManage && (
+                  <div className="mt-4 flex gap-2">
+                    <button onClick={() => openEdit(selected)} className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-2 text-[11px] font-bold dark:border-slate-700">
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                    <button onClick={() => void remove(selected)} className="flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-bold text-rose-600 dark:border-rose-900">
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
-              No lecture selected. Choose a lecture from the playlist.
-            </div>
+            <p className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700">
+              {loading ? 'Loading lectures…' : 'No recorded lectures for this course yet.'}
+            </p>
           )}
         </div>
 
-        {/* Right Playlist List (1 Col) */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Week {selectedWeek} Playlist</h3>
-            <span className="text-[10px] text-slate-400 font-mono">
-              {activeWeekRecordings.length} Sessions
-            </span>
-          </div>
-
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
-            {activeWeekRecordings.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                <Video className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Recorded Lectures for Week {selectedWeek}</p>
-                <p className="text-[11px] text-slate-400 mt-1">Sessions for this week will be published following the live class schedule.</p>
-              </div>
-            ) : (
-              activeWeekRecordings.map((rec) => {
-                const isSelected = selectedVideo?.id === rec.id;
-                return (
-                  <div
-                    key={rec.id}
-                    onClick={() => setSelectedVideo(rec)}
-                    className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between ${
-                      isSelected
-                        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-500 shadow-sm'
-                        : 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                        isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}>
-                        <Play className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-900 dark:text-white line-clamp-1">{rec.title}</div>
-                        <div className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{rec.topic}</div>
-                        <div className="text-[10px] text-slate-400 mt-1 flex items-center space-x-2">
-                          <span>{rec.durationMinutes} min</span>
-                          <span>•</span>
-                          <span>{rec.recordingDate}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+        <aside className="space-y-2">
+          {weekLectures.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => setSelectedId(l.id)}
+              className={`w-full rounded-xl border p-3 text-left text-xs font-bold ${selected?.id === l.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'}`}
+            >
+              {l.title}
+              <span className="mt-1 block text-[10px] font-medium text-slate-500">
+                Week {l.week_number ?? 1}
+                {l.duration_minutes ? ` • ${l.duration_minutes} min` : ''}
+                {!l.is_published ? ' • Draft' : ''}
+              </span>
+            </button>
+          ))}
+        </aside>
       </div>
+
+      {form && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
+          <form onSubmit={save} className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6 dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black">{form.id ? 'Edit lecture' : 'Add lecture'}</h3>
+              <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
+            </div>
+            <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
+            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" className={inputCls} /></Field>
+            <Field label="Description"><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Week"><input type="number" min={1} value={form.week_number} onChange={(e) => setForm({ ...form, week_number: Math.max(1, Number(e.target.value) || 1) })} className={inputCls} /></Field>
+              <Field label="Duration (min)"><input type="number" min={0} value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: e.target.value })} className={inputCls} /></Field>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-bold">
+              <input type="checkbox" checked={form.is_published} onChange={(e) => setForm({ ...form, is_published: e.target.checked })} />
+              Visible to enrolled students
+            </label>
+            <button disabled={saving} className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white disabled:opacity-60">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
+
+const inputCls =
+  'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800';
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div>
+    <label className="text-[11px] font-black uppercase text-slate-500">{label}</label>
+    <div className="mt-1">{children}</div>
+  </div>
+);
