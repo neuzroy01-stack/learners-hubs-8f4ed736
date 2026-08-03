@@ -193,3 +193,127 @@ export const needsBootstrap = createServerFn({ method: "GET" }).handler(async ()
     .in("role", ["super_admin", "admin"]);
   return { needsBootstrap: (count ?? 0) === 0 };
 });
+
+/* ------------------------------------------------------------------ *
+ * Account directory: list / edit / activate-deactivate                *
+ * ------------------------------------------------------------------ */
+
+const assertStaffAdmin = async (context: { supabase: any; userId: string }) => {
+  const { data: isAdmin } = await context.supabase.rpc("is_staff_admin", { _user_id: context.userId });
+  const { data: isSuper } = await context.supabase.rpc("has_role", {
+    _user_id: context.userId,
+    _role: "super_admin",
+  });
+  return { isAdmin: Boolean(isAdmin), isSuper: Boolean(isSuper) };
+};
+
+/** Full account directory for admin screens (reads through the server, never the browser). */
+export const listAccounts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { isAdmin } = await assertStaffAdmin(context);
+    if (!isAdmin) return { error: "You are not allowed to view accounts." as string, accounts: [] as CloudProfile[] };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, father_name, phone, email, role, status, photo_url, batch_id, course_id")
+      .order("full_name");
+    if (error) return { error: error.message, accounts: [] as CloudProfile[] };
+    return { accounts: (data ?? []) as CloudProfile[] };
+  });
+
+const updateSchema = z.object({
+  userId: z.string().uuid(),
+  fullName: z.string().trim().min(2).max(120),
+  fatherName: z.string().trim().max(120).optional(),
+  phone: z.string().trim().min(6).max(20),
+  email: z.string().trim().email().max(160).optional().or(z.literal("")),
+  role: z.enum(["super_admin", "admin", "teacher", "student"]),
+  batchId: z.string().trim().max(60).optional(),
+  courseId: z.string().trim().max(60).optional(),
+});
+
+/** Edits an existing account. Role changes are Super Admin only. */
+export const updateAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: z.input<typeof updateSchema>) => updateSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { isAdmin, isSuper } = await assertStaffAdmin(context);
+    if (!isAdmin) return { error: "You are not allowed to edit accounts." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existingRows } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role, phone, email")
+      .eq("id", data.userId)
+      .limit(1);
+    const existing = existingRows?.[0];
+    if (!existing) return { error: "Account not found." };
+    if (existing.role !== data.role && !isSuper) {
+      return { error: "Only a Super Admin can change a user's role." };
+    }
+    if (existing.role !== "student" && !isSuper) {
+      return { error: "Only a Super Admin can edit staff accounts." };
+    }
+
+    const phone = digits(data.phone);
+    const { data: clash } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("phone", phone)
+      .neq("id", data.userId)
+      .limit(1);
+    if (clash?.length) return { error: "Another account already uses this phone number." };
+
+    const loginEmail = data.email && data.email.includes("@") ? data.email : syntheticEmail(phone);
+
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        full_name: data.fullName,
+        father_name: data.fatherName || null,
+        phone,
+        email: loginEmail,
+        role: data.role,
+        batch_id: data.batchId || null,
+        course_id: data.courseId || null,
+      })
+      .eq("id", data.userId);
+    if (error) return { error: error.message };
+
+    // Keep the auth login e-mail in sync so sign-in never drifts from the profile.
+    if (loginEmail !== existing.email) {
+      await supabaseAdmin.auth.admin.updateUserById(data.userId, { email: loginEmail, email_confirm: true });
+    }
+    if (existing.role !== data.role) {
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
+      await supabaseAdmin.from("user_roles").insert({ user_id: data.userId, role: data.role });
+    }
+    return { ok: true };
+  });
+
+/**
+ * Soft delete: deactivating blocks sign-in but keeps fees, attendance and
+ * results intact. Reactivating restores access.
+ */
+export const setAccountStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string; status: "active" | "inactive" }) =>
+    z.object({ userId: z.string().uuid(), status: z.enum(["active", "inactive"]) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin, isSuper } = await assertStaffAdmin(context);
+    if (!isAdmin) return { error: "You are not allowed to change account status." };
+    if (data.userId === context.userId) return { error: "You cannot deactivate your own account." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin.from("profiles").select("role").eq("id", data.userId).limit(1);
+    const target = rows?.[0];
+    if (!target) return { error: "Account not found." };
+    if (target.role !== "student" && !isSuper) {
+      return { error: "Only a Super Admin can deactivate staff accounts." };
+    }
+
+    const { error } = await supabaseAdmin.from("profiles").update({ status: data.status }).eq("id", data.userId);
+    return error ? { error: error.message } : { ok: true };
+  });
