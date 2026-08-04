@@ -80,7 +80,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center space-x-4">
           <img
-            src={student.photoUrl}
+            /* src={student.photoUrl} */
             alt={student.fullName}
             className="w-16 h-16 rounded-2xl object-cover ring-4 ring-blue-500/30 shadow-lg"
           />
@@ -197,8 +197,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               /* className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer shrink-0" */
             > 
               <PlayCircle className="w-4 h-4" />
-              <span>Continue Learning (Video Classroom)</span>
-            </button>  
+             /* <span> Continue Learning </span> */
+            </button>
           </div>
 
           {/* Week-wise & Day-wise Syllabus Roadmap */}
