@@ -127,13 +127,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 dark:text-white">
-           const progress =
-enrollments?.[0]?.progressPercentage ?? 0;
+           {enrollments[0]?.progressPercentage || 0}%
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-2 overflow-hidden">
             <div
               className="bg-blue-600 h-full rounded-full transition-all duration-500"
-              style={{ width: `${enrollments[0]?.progressPercentage || 68}%` }}
+              style={{ width: `${enrollments[0]?.progressPercentage || 0}%` }}
             />
           </div>
         </div>
