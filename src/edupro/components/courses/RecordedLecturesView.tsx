@@ -9,6 +9,33 @@ import { useFeedback } from '../common/Feedback';
  * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
  * iframe-embeddable form. YouTube refuses `watch?v=` links inside an iframe.
  */
+
+export function toGoogleDriveEmbedUrl(rawUrl: string): string |null {
+  if (!rawUrl) return null;
+
+  try {
+    const url = new URL(rawUrl);
+
+    // https://drive.google.com/file/d/FILE_ID/view
+    const match = url.pathname.match(/\/file\/d\/([^/]+)/);
+
+    if (match) {
+      return `https://drive.google.com/file/d/${match[1]}/preview`;
+    }
+
+    // https://drive.google.com/open?id=FILE_ID
+    const id = url.searchParams.get("id");
+
+    if (id) {
+      return `https://drive.google.com/file/d/${id}/preview`;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function toYouTubeEmbedUrl(rawUrl: string): string | null {
   if (!rawUrl) return null;
   try {
@@ -82,7 +109,10 @@ export const RecordedLecturesView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
-  const embedUrl = selected ? toYouTubeEmbedUrl(selected.video_url) : null;
+  cconst embedUrl = selected
+  ? toYouTubeEmbedUrl(selected.video_url) ||
+    toGoogleDriveEmbedUrl(selected.video_url)
+  : null;
   const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -103,9 +133,20 @@ export const RecordedLecturesView: React.FC = () => {
     e.preventDefault();
     if (!form || !activeCourseId) return;
     if (!form.title.trim()) return notify('error', 'Title is required');
-    if (!toYouTubeEmbedUrl(form.video_url)) {
-      return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
-    }
+
+    
+  if (
+    !toYouTubeEmbedUrl(form.video_url) &&
+    !toGoogleDriveEmbedUrl(form.video_url)
+) {
+    return notify(
+        "error",
+        "Enter a valid YouTube or Google Drive video link"
+    );
+}
+
+
+    
     setSaving(true);
     try {
       const payload = {
