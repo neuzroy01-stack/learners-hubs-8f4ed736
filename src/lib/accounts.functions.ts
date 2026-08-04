@@ -254,3 +254,36 @@ export const needsBootstrap = createServerFn({ method: "GET" }).handler(async ()
     .in("role", ["super_admin", "admin"]);
   return { needsBootstrap: (count ?? 0) === 0 };
 });
+
+/**
+ * Permanent delete (Super Admin only). Removes the login, the profile and the
+ * user's dependent records so no foreign-key orphan is left behind.
+ */
+export const deleteAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { userId: string }) => ({ userId: String(input.userId) }))
+  .handler(async ({ data, context }) => {
+    const { resolvePowers } = await import("./accounts.server");
+    const { isSuper } = await resolvePowers(context.supabase as never, context.userId);
+    if (!isSuper) return { error: "Only a Super Admin can delete accounts." };
+    if (data.userId === context.userId) return { error: "You cannot delete your own account." };
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin.from("profiles").select("id").eq("id", data.userId).limit(1);
+    if (!rows?.length) return { error: "Account not found." };
+
+    // Children first, then the profile, then the auth login.
+    await supabaseAdmin.from("assignment_submissions").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("attendance").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("payments").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("fees").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("enrollments").delete().eq("student_id", data.userId);
+    await supabaseAdmin.from("notifications").delete().eq("user_id", data.userId);
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
+
+    const { error: profileErr } = await supabaseAdmin.from("profiles").delete().eq("id", data.userId);
+    if (profileErr) return { error: profileErr.message };
+
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
+    return error ? { error: error.message } : { ok: true };
+  });

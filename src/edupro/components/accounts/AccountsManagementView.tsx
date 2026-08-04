@@ -1,513 +1,316 @@
-import React, { useState, useMemo } from 'react';
-import { db } from '../../services/db';
-import { createAccount, setAccountPassword } from '../../../lib/accounts.functions';
-import { useAuth } from '../../context/AuthContext';
-import { User, UserRole } from '../../types/lms';
+import React, { useMemo, useState } from 'react';
 import {
   Users,
   UserPlus,
   ShieldCheck,
   KeyRound,
-  GraduationCap,
-  Briefcase,
   Search,
   X,
-  Save,
-  Eye,
-  EyeOff,
-  CheckCircle2,
+  Pencil,
+  Trash2,
+  Power,
+  RefreshCw,
 } from 'lucide-react';
+import {
+  listAccounts,
+  createAccount,
+  updateAccount,
+  setAccountPassword,
+  setAccountStatus,
+  deleteAccount,
+  type CloudProfile,
+} from '../../../lib/accounts.functions';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { useFeedback } from '../common/Feedback';
+import { useAuth } from '../../context/AuthContext';
 
 type FormRole = 'student' | 'teacher' | 'admin' | 'super_admin';
 
+const inputCls =
+  'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800';
+
+interface FormState {
+  id?: string;
+  fullName: string;
+  fatherName: string;
+  phone: string;
+  email: string;
+  password: string;
+  role: FormRole;
+  batchId: string;
+  courseId: string;
+}
+
+const emptyForm = (): FormState => ({
+  fullName: '',
+  fatherName: '',
+  phone: '',
+  email: '',
+  password: '',
+  role: 'student',
+  batchId: '',
+  courseId: '',
+});
+
+/** Accounts directory — reads and writes go through the server, keyed by user UUID. */
 export const AccountsManagementView: React.FC = () => {
-  const { currentUser, currentRole, refreshUserData } = useAuth();
-
-  const [users, setUsers] = useState<User[]>(db.getUsers());
-  const [showCreate, setShowCreate] = useState(false);
-  const [pwUser, setPwUser] = useState<User | null>(null);
-  const [pwValue, setPwValue] = useState('');
-  const [pwShow, setPwShow] = useState(false);
-  const [filter, setFilter] = useState<'all' | UserRole>('all');
-  const [search, setSearch] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
-
-  const [role, setRole] = useState<FormRole>('student');
-  const [fullName, setFullName] = useState('');
-  const [fatherName, setFatherName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [courseId, setCourseId] = useState('');
-  const [batchId, setBatchId] = useState('');
-  const [designation, setDesignation] = useState('Instructor');
-  const [subject, setSubject] = useState('');
-  const [monthlySalary, setMonthlySalary] = useState<number | ''>('');
-  const [assignedCourseIds, setAssignedCourseIds] = useState<string[]>([]);
-
-  const [errors, setErrors] = useState<string[]>([]);
-
-  const courses = db.getCourses();
-  const batches = db.getBatches();
+  const { currentRole } = useAuth();
+  const { notify, confirm } = useFeedback();
   const isSuper = currentRole === 'super_admin';
 
+  const { data, loading, error, reload } = useCloudQuery(async () => listAccounts(), []);
+  const accounts = useMemo(() => (data && 'accounts' in data ? (data.accounts as CloudProfile[]) : []), [data]);
+
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | FormRole>('all');
+  const [form, setForm] = useState<FormState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [pwUser, setPwUser] = useState<CloudProfile | null>(null);
+  const [pwValue, setPwValue] = useState('');
+
   const filtered = useMemo(() => {
-    let list = users;
+    let list = accounts;
     if (filter !== 'all') list = list.filter((u) => u.role === filter);
     const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (u) =>
-          u.name.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          u.phone.toLowerCase().includes(q),
-      );
-    }
+    if (q) list = list.filter((u) => u.full_name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q) || (u.phone ?? '').includes(q));
     return list;
-  }, [users, filter, search]);
+  }, [accounts, filter, search]);
 
-  const flash = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2800);
-  };
-
-  const resetForm = () => {
-    setRole('student');
-    setFullName('');
-    setFatherName('');
-    setPhone('');
-    setEmail('');
-    setPassword('');
-    setCourseId('');
-    setBatchId('');
-    setDesignation('Instructor');
-    setSubject('');
-    setMonthlySalary('');
-    setAssignedCourseIds([]);
-    setErrors([]);
-  };
-
-  const openCreate = () => {
-    resetForm();
-    setShowCreate(true);
-  };
-
-  const validateForm = (): string[] => {
-    const errs: string[] = [];
-    if (!fullName.trim()) errs.push('Full Name is required.');
-    if (!phone.trim() || phone.replace(/\D/g, '').length < 6) errs.push('Valid phone number is required.');
-    if (!email.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.push('Valid email address is required.');
-    if (!password || password.length < 6) errs.push('Password must be at least 6 characters (Super Admin sets it manually).');
-    if (role === 'student' && !fatherName.trim()) errs.push('Father Name is required for students.');
-    // Duplicate check
-    if (users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) errs.push('An account with this email already exists.');
-    if (users.some((u) => u.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''))) errs.push('An account with this phone already exists.');
-    return errs;
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    const errs = validateForm();
-    if (errs.length) {
-      setErrors(errs);
-      return;
-    }
-
-    const actorId = currentUser?.id || 'usr-superadmin';
-    const actorName = currentUser?.name || 'Super Admin';
-
-    // Create the cloud account first so the person can sign in from any device.
-    let cloudUserId: string | undefined;
-    let cloudWarning = '';
+    if (!form) return;
+    setSaving(true);
     try {
-      const res = await createAccount({
-        data: {
-          fullName,
-          fatherName: role === 'student' ? fatherName : undefined,
-          phone,
-          email,
-          password,
-          role,
-          batchId: batchId || undefined,
-          courseId: courseId || undefined,
-        },
-      });
-      if ('userId' in res && res.userId) cloudUserId = res.userId;
-      else cloudWarning = ` (cloud sign-in not enabled: ${'error' in res ? res.error : 'unknown error'})`;
-    } catch {
-      cloudWarning = ' (cloud sign-in could not be set up — sign in as a cloud Super Admin and retry)';
-    }
-
-    try {
-      if (role === 'student') {
-        db.createStudentAccount(
-          {
-            fullName,
-            fatherName,
-            phone,
-            email,
-            password,
-            courseId: courseId || undefined,
-            batchId: batchId || undefined,
-            userId: cloudUserId,
-          },
-          actorId,
-          actorName,
-        );
-        flash(`Student ${fullName} created with fresh (zero) stats.${cloudWarning}`);
-      } else if (role === 'teacher') {
-        db.createTeacherAccount(
-          {
-            fullName,
-            phone,
-            email,
-            password,
-            designation,
-            subjectSpecialization: subject || 'General',
-            monthlySalary: typeof monthlySalary === 'number' ? monthlySalary : 0,
-            assignedCourseIds,
-            userId: cloudUserId,
-          },
-          actorId,
-          actorName,
-        );
-        flash(`Teacher ${fullName} created and assigned to ${assignedCourseIds.length} course(s).${cloudWarning}`);
-      } else {
-        db.createAdminAccount(
-          { fullName, phone, email, password, role, userId: cloudUserId },
-          actorId,
-          actorName,
-        );
-        flash(`${role === 'super_admin' ? 'Super Admin' : 'Admin'} ${fullName} created.${cloudWarning}`);
+      const base = {
+        fullName: form.fullName.trim(),
+        fatherName: form.fatherName.trim() || undefined,
+        phone: form.phone.trim(),
+        email: form.email.trim() || undefined,
+        role: form.role,
+        batchId: form.batchId.trim() || undefined,
+        courseId: form.courseId.trim() || undefined,
+      };
+      const res = form.id
+        ? await updateAccount({ data: { ...base, userId: form.id } })
+        : await createAccount({ data: { ...base, password: form.password } });
+      if ('error' in res && res.error) {
+        notify('error', 'Could not save account', res.error);
+        return;
       }
-
-      setUsers(db.getUsers());
-      refreshUserData();
-      setShowCreate(false);
-      resetForm();
+      notify('success', form.id ? 'Account updated' : 'Account created');
+      setForm(null);
+      await reload();
     } catch (err) {
-      setErrors([(err as Error).message || 'Failed to create account.']);
+      notify('error', 'Could not save account', (err as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pwUser) return;
-    if (!pwValue || pwValue.length < 6) {
-      flash('Password must be at least 6 characters.');
-      return;
-    }
-    let cloudNote = '';
-    if (/^[0-9a-f-]{36}$/i.test(pwUser.id)) {
-      try {
-        const res = await setAccountPassword({ data: { userId: pwUser.id, password: pwValue } });
-        if ('error' in res && res.error) cloudNote = ` (cloud password unchanged: ${res.error})`;
-      } catch {
-        cloudNote = ' (cloud password unchanged — please retry)';
-      }
-    }
-    const ok = db.changeUserPassword(
-      pwUser.id,
-      pwValue,
-      currentUser?.id || 'usr-superadmin',
-      currentUser?.name || 'Super Admin',
-    );
-    if (ok) {
-      flash(`Password updated for ${pwUser.name}.${cloudNote}`);
-      setUsers(db.getUsers());
+    if (pwValue.length < 6) return notify('error', 'Password must be at least 6 characters');
+    try {
+      const res = await setAccountPassword({ data: { userId: pwUser.id, password: pwValue } });
+      if ('error' in res && res.error) return notify('error', 'Could not change password', res.error);
+      notify('success', `Password updated for ${pwUser.full_name}`);
       setPwUser(null);
       setPwValue('');
-      setPwShow(false);
+    } catch (err) {
+      notify('error', 'Could not change password', (err as Error).message);
     }
   };
 
-  if (!isSuper) {
+  const toggleStatus = async (u: CloudProfile) => {
+    const next = u.status === 'active' ? 'inactive' : 'active';
+    try {
+      const res = await setAccountStatus({ data: { userId: u.id, status: next } });
+      if ('error' in res && res.error) return notify('error', 'Could not update status', res.error);
+      notify('success', next === 'active' ? 'Account reactivated' : 'Account deactivated — sign-in blocked');
+      await reload();
+    } catch (err) {
+      notify('error', 'Could not update status', (err as Error).message);
+    }
+  };
+
+  const removeUser = async (u: CloudProfile) => {
+    const res = await confirm({
+      title: `Delete ${u.full_name}?`,
+      message: 'This permanently removes the login and all linked records (fees, payments, attendance, submissions). This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Delete permanently',
+    });
+    if (!res.ok) return;
+    try {
+      const out = await deleteAccount({ data: { userId: u.id } });
+      if ('error' in out && out.error) return notify('error', 'Could not delete', out.error);
+      notify('success', `${u.full_name} deleted`);
+      await reload();
+    } catch (err) {
+      notify('error', 'Could not delete', (err as Error).message);
+    }
+  };
+
+  if (currentRole !== 'admin' && !isSuper) {
     return (
       <div className="p-8">
-        <div className="max-w-lg mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center">
-          <ShieldCheck className="w-10 h-10 mx-auto text-rose-500" />
-          <h2 className="mt-3 font-black text-lg">Super Admin Only</h2>
-          <p className="text-sm text-slate-500 mt-1">Account creation & password control is restricted to Super Admin.</p>
+        <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
+          <ShieldCheck className="mx-auto h-10 w-10 text-rose-500" />
+          <h2 className="mt-3 text-lg font-black">Admins only</h2>
+          <p className="mt-1 text-sm text-slate-500">Account management is restricted to Admin and Super Admin.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" /> {toast}
-        </div>
-      )}
-
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+      <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl font-black flex items-center gap-2">
-            <Users className="w-6 h-6 text-indigo-600" />
-            Accounts & Staff Management
+          <h1 className="flex items-center gap-2 text-xl font-black">
+            <Users className="h-6 w-6 text-indigo-600" /> Accounts & Staff Management
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Only the Super Admin can create accounts and set/change passwords. Self-reset is disabled for students & teachers.
-          </p>
+          <p className="mt-1 text-xs text-slate-500">Create, edit, deactivate or permanently delete any user. All records live in the database.</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md"
-        >
-          <UserPlus className="w-4 h-4" /> Create New Account
-        </button>
-      </div>
+        <div className="flex gap-2">
+          <button onClick={() => void reload()} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={() => setForm(emptyForm())} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md">
+            <UserPlus className="h-4 w-4" /> Create Account
+          </button>
+        </div>
+      </header>
 
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email or phone…"
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
-          />
+      {error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+      {data && 'error' in data && data.error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{data.error}</p>}
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, email or phone…" className={`${inputCls} pl-9`} />
         </div>
         {(['all', 'super_admin', 'admin', 'teacher', 'student'] as const).map((r) => (
           <button
             key={r}
             onClick={() => setFilter(r)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${
-              filter === r ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}
+            className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${filter === r ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}
           >
-            {r === 'all' ? 'All' : r.replace('_', ' ')}
+            {r.replace('_', ' ')}
           </button>
         ))}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="p-3.5">Name</th>
-                <th className="p-3.5">Role</th>
-                <th className="p-3.5">Email</th>
-                <th className="p-3.5">Phone</th>
-                <th className="p-3.5">Status</th>
-                <th className="p-3.5">Created</th>
-                <th className="p-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400">No accounts match your filter.</td>
-                </tr>
-              ) : (
-                filtered.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="p-3.5 font-bold text-slate-900 dark:text-white">{u.name}</td>
-                    <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                        u.role === 'super_admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' :
-                        u.role === 'admin' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' :
-                        u.role === 'teacher' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' :
-                        'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                      }`}>{u.role.replace('_', ' ')}</span>
-                    </td>
-                    <td className="p-3.5 text-slate-600 dark:text-slate-300">{u.email}</td>
-                    <td className="p-3.5 text-slate-600 dark:text-slate-300">{u.phone}</td>
-                    <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                      }`}>{u.status}</span>
-                    </td>
-                    <td className="p-3.5 text-slate-400">{u.createdAt}</td>
-                    <td className="p-3.5 text-right">
-                      <button
-                        onClick={() => { setPwUser(u); setPwValue(''); setPwShow(false); }}
-                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" /> Change Password
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* CREATE MODAL */}
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
-              <h3 className="font-black text-base flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-indigo-600" /> Create New Account
-              </h3>
-              <button onClick={() => setShowCreate(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
-            </div>
-
-            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300">Role</label>
-                <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['student', 'teacher', 'admin', 'super_admin'] as const).map((r) => (
+      <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <table className="w-full min-w-[720px] text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+            <tr><th className="p-3">Name</th><th className="p-3">Phone</th><th className="p-3">Email</th><th className="p-3">Role</th><th className="p-3">Status</th><th className="p-3 text-right">Actions</th></tr>
+          </thead>
+          <tbody>
+            {filtered.map((u) => (
+              <tr key={u.id} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="p-3 font-bold">{u.full_name}</td>
+                <td className="p-3">{u.phone ?? '—'}</td>
+                <td className="p-3">{u.email ?? '—'}</td>
+                <td className="p-3 uppercase">{u.role.replace('_', ' ')}</td>
+                <td className={`p-3 font-bold uppercase ${u.status === 'active' ? 'text-emerald-600' : 'text-rose-600'}`}>{u.status}</td>
+                <td className="p-3">
+                  <div className="flex flex-wrap justify-end gap-1.5">
                     <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`px-2 py-2 rounded-xl border text-[11px] font-bold ${
-                        role === r ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}
+                      onClick={() =>
+                        setForm({
+                          id: u.id,
+                          fullName: u.full_name,
+                          fatherName: u.father_name ?? '',
+                          phone: u.phone ?? '',
+                          email: u.email ?? '',
+                          password: '',
+                          role: u.role as FormRole,
+                          batchId: u.batch_id ?? '',
+                          courseId: u.course_id ?? '',
+                        })
+                      }
+                      className="rounded-lg border border-slate-300 p-1.5 dark:border-slate-700"
+                      title="Edit"
                     >
-                      {r === 'student' ? <GraduationCap className="w-4 h-4 mx-auto mb-1" /> : r === 'teacher' ? <Briefcase className="w-4 h-4 mx-auto mb-1" /> : <ShieldCheck className="w-4 h-4 mx-auto mb-1" />}
-                      {r.replace('_', ' ')}
+                      <Pencil className="h-3.5 w-3.5" />
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Full Name *</label>
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                </div>
-                {role === 'student' && (
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Father Name *</label>
-                    <input value={fatherName} onChange={(e) => setFatherName(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                  </div>
-                )}
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Phone *</label>
-                  <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 90000 00000" className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Email *</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Password * (Set manually — no auto-generation)</label>
-                  <div className="mt-1 relative">
-                    <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" className="w-full pl-3 pr-10 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                    <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600">
-                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {isSuper && (
+                      <button onClick={() => setPwUser(u)} className="rounded-lg border border-slate-300 p-1.5 dark:border-slate-700" title="Set password">
+                        <KeyRound className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button onClick={() => void toggleStatus(u)} className="rounded-lg border border-amber-300 p-1.5 text-amber-600" title="Activate / deactivate">
+                      <Power className="h-3.5 w-3.5" />
                     </button>
+                    {isSuper && (
+                      <button onClick={() => void removeUser(u)} className="rounded-lg border border-rose-300 p-1.5 text-rose-600" title="Delete permanently">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
-                </div>
-              </div>
+                </td>
+              </tr>
+            ))}
+            {!loading && filtered.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-500">No accounts found.</td></tr>}
+          </tbody>
+        </table>
+      </section>
 
-              {role === 'student' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Assign Course (Optional)</label>
-                    <select value={courseId} onChange={(e) => setCourseId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                      <option value="">— None (assign later) —</option>
-                      {courses.map((c) => <option key={c.id} value={c.id}>{c.title} · ₹{c.feeAmount.toLocaleString()}</option>)}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Assigning a course auto-reflects its fee (Paid: 0, Remaining: Total).</p>
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Assign Batch (Optional)</label>
-                    <select value={batchId} onChange={(e) => setBatchId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                      <option value="">— Unassigned —</option>
-                      {batches.filter((b) => !courseId || b.courseId === courseId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {role === 'teacher' && (
-                <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300">Designation</label>
-                      <input value={designation} onChange={(e) => setDesignation(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                    </div>
-                    <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300">Subject Specialization</label>
-                      <input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                    </div>
-                    <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300">Monthly Salary (₹)</label>
-                      <input type="number" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value === '' ? '' : Number(e.target.value))} className="mt-1 w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Assigned Courses (Optional)</label>
-                    <div className="mt-1.5 flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                      {courses.map((c) => {
-                        const on = assignedCourseIds.includes(c.id);
-                        return (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => setAssignedCourseIds((prev) => on ? prev.filter((x) => x !== c.id) : [...prev, c.id])}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${on ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}
-                          >
-                            {c.title}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {errors.length > 0 && (
-                <div className="rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 p-3 text-rose-700 dark:text-rose-300 text-[11px] space-y-0.5">
-                  {errors.map((e, i) => <div key={i}>• {e}</div>)}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2">
-                  <Save className="w-4 h-4" /> Create Account
-                </button>
-              </div>
-            </form>
-          </div>
+      {form && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <form onSubmit={save} className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6 dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black">{form.id ? 'Edit account' : 'Create account'}</h3>
+              <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Full name"><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className={inputCls} /></Field>
+              <Field label="Father name"><input value={form.fatherName} onChange={(e) => setForm({ ...form, fatherName: e.target.value })} className={inputCls} /></Field>
+              <Field label="Phone"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} /></Field>
+              <Field label="Email (optional)"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} /></Field>
+              <Field label="Role">
+                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as FormRole })} className={inputCls} disabled={!isSuper}>
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </Field>
+              <Field label="Batch (optional)"><input value={form.batchId} onChange={(e) => setForm({ ...form, batchId: e.target.value })} className={inputCls} /></Field>
+            </div>
+            {!form.id && (
+              <Field label="Password (set manually)">
+                <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputCls} />
+              </Field>
+            )}
+            <button disabled={saving} className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white disabled:opacity-60">
+              {saving ? 'Saving…' : 'Save account'}
+            </button>
+          </form>
         </div>
       )}
 
-      {/* PASSWORD MODAL */}
       {pwUser && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="font-black text-base flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-amber-500" /> Change Password
-              </h3>
-              <button onClick={() => setPwUser(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <form onSubmit={changePassword} className="w-full max-w-sm space-y-3 rounded-2xl bg-white p-6 dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black">Set password — {pwUser.full_name}</h3>
+              <button type="button" onClick={() => setPwUser(null)}><X className="h-4 w-4" /></button>
             </div>
-            <form onSubmit={handleChangePassword} className="p-5 space-y-4 text-xs">
-              <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
-                <div className="font-bold">{pwUser.name}</div>
-                <div className="text-slate-500">{pwUser.email} · {pwUser.role.replace('_', ' ')}</div>
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300">New Password (min 6 chars)</label>
-                <div className="mt-1 relative">
-                  <input type={pwShow ? 'text' : 'password'} value={pwValue} onChange={(e) => setPwValue(e.target.value)} className="w-full pl-3 pr-10 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
-                  <button type="button" onClick={() => setPwShow((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400">
-                    {pwShow ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <p className="text-[10px] text-slate-400">This action is logged in the Audit Trail. Communicate the new password to the user securely.</p>
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button type="button" onClick={() => setPwUser(null)} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-2">
-                  <Save className="w-4 h-4" /> Update Password
-                </button>
-              </div>
-            </form>
-          </div>
+            <input value={pwValue} onChange={(e) => setPwValue(e.target.value)} placeholder="New password" className={inputCls} />
+            <button className="w-full rounded-xl bg-slate-900 py-2.5 text-xs font-bold text-white dark:bg-white dark:text-slate-900">Update password</button>
+          </form>
         </div>
       )}
     </div>
   );
 };
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div>
+    <label className="text-[11px] font-black uppercase text-slate-500">{label}</label>
+    <div className="mt-1">{children}</div>
+  </div>
+);
