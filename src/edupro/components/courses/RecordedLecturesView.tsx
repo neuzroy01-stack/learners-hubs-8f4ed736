@@ -9,33 +9,6 @@ import { useFeedback } from '../common/Feedback';
  * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
  * iframe-embeddable form. YouTube refuses `watch?v=` links inside an iframe.
  */
-
-export function toGoogleDriveEmbedUrl(rawUrl: string): string |null {
-  if (!rawUrl) return null;
-
-  try {
-    const url = new URL(rawUrl);
-
-    // https://drive.google.com/file/d/FILE_ID/view
-    const match = url.pathname.match(/\/file\/d\/([^/]+)/);
-
-    if (match) {
-      return `https://drive.google.com/file/d/${match[1]}/preview`;
-    }
-
-    // https://drive.google.com/open?id=FILE_ID
-    const id = url.searchParams.get("id");
-
-    if (id) {
-      return `https://drive.google.com/file/d/${id}/preview`;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 export function toYouTubeEmbedUrl(rawUrl: string): string | null {
   if (!rawUrl) return null;
   try {
@@ -57,6 +30,23 @@ export function toYouTubeWatchUrl(rawUrl: string): string | null {
   const embed = toYouTubeEmbedUrl(rawUrl);
   const id = embed?.split('/embed/')[1]?.split('?')[0];
   return id ? `https://www.youtube.com/watch?v=${id}` : null;
+}
+
+export function toEmbedUrl(url: string): string {
+  if (!url) return "";
+
+  // YouTube
+  const yt = toYouTubeEmbedUrl(url);
+  if (yt) return yt;
+
+  // Google Drive
+  const match = url.match(/\/file\/d\/([^/]+)/);
+
+  if (match) {
+    return `https://drive.google.com/file/d/${match[1]}/preview`;
+  }
+
+  return url;
 }
 
 interface FormState {
@@ -109,10 +99,7 @@ export const RecordedLecturesView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
-  cconst embedUrl = selected
-  ? toYouTubeEmbedUrl(selected.video_url) ||
-    toGoogleDriveEmbedUrl(selected.video_url)
-  : null;
+  const embedUrl = selected ? toEmbedUrl(selected.video_url) : "";
   const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -133,20 +120,10 @@ export const RecordedLecturesView: React.FC = () => {
     e.preventDefault();
     if (!form || !activeCourseId) return;
     if (!form.title.trim()) return notify('error', 'Title is required');
-
-    
-  if (
-    !toYouTubeEmbedUrl(form.video_url) &&
-    !toGoogleDriveEmbedUrl(form.video_url)
-) {
-    return notify(
-        "error",
-        "Enter a valid YouTube or Google Drive video link"
-    );
-}
-
-
-    
+   /** if (!toYouTubeEmbedUrl(form.video_url)) {
+     * return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
+    } 
+    */
     setSaving(true);
     try {
       const payload = {
@@ -307,7 +284,7 @@ export const RecordedLecturesView: React.FC = () => {
               <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
             </div>
             <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
-            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" className={inputCls} /></Field>
+            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="Paste YouTube or Google Drive Video URL" className={inputCls} /></Field>
             <Field label="Description"><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Week"><input type="number" min={1} value={form.week_number} onChange={(e) => setForm({ ...form, week_number: Math.max(1, Number(e.target.value) || 1) })} className={inputCls} /></Field>
