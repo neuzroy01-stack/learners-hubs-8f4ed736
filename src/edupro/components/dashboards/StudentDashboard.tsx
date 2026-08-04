@@ -79,11 +79,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
       {/* Student Welcome Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center space-x-4">
+          {/*
           <img
             /* src={student.photoUrl} */
             alt={student.fullName}
             className="w-16 h-16 rounded-2xl object-cover ring-4 ring-blue-500/30 shadow-lg"
-          />
+          /> 
+          */}
           <div>
             <div className="flex items-center space-x-2">
               <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-full text-xs font-bold">
@@ -125,7 +127,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 dark:text-white">
-            {enrollments[0]?.progressPercentage || 68}%
+           const progress =
+enrollments?.[0]?.progressPercentage ?? 0;
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-2 overflow-hidden">
             <div
@@ -192,14 +195,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               <p className="text-xs text-slate-500">{activeCourse.description}</p>
             </div>
 
-             <button
-              /* onClick={() => onSelectCourse(activeCourse)} */
-              /* className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer shrink-0" */
+           {/*  <button
+               onClick={() => onSelectCourse(activeCourse)} 
+               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer shrink-0" 
             > 
               <PlayCircle className="w-4 h-4" />
-             /* <span> Continue Learning </span> */
-            </button>
-          </div>
+             <span> Continue Learning </span> 
+            </button> 
+            */}
+          </div> 
 
           {/* Week-wise & Day-wise Syllabus Roadmap */}
           <div className="space-y-4">
