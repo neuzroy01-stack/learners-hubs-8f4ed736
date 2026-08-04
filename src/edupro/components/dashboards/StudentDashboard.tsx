@@ -192,13 +192,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               <p className="text-xs text-slate-500">{activeCourse.description}</p>
             </div>
 
-            <button
+           /** <button
               onClick={() => onSelectCourse(activeCourse)}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer shrink-0"
             >
               <PlayCircle className="w-4 h-4" />
               <span>Continue Learning (Video Classroom)</span>
-            </button>
+            </button>  */
           </div>
 
           {/* Week-wise & Day-wise Syllabus Roadmap */}
