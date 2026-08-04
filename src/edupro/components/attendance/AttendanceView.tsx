@@ -1,218 +1,193 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../../services/db';
-import { AttendanceRecord, Batch, StudentProfile } from '../../types/lms';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FileSpreadsheet, Save, RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { attendanceApi, courseRoster, type CloudAttendance } from '../../services/cloudDb';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { useCourseScope } from '../../hooks/useCourseScope';
+import { useFeedback } from '../common/Feedback';
 import { useAuth } from '../../context/AuthContext';
-import {
-  FileSpreadsheet,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Calendar,
-  UserCheck,
-  Save,
-  Search,
-  Check,
-  X
-} from 'lucide-react';
 
+type Status = 'present' | 'absent' | 'leave';
+const STATUSES: Status[] = ['present', 'absent', 'leave'];
+
+const inputCls =
+  'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800';
+
+const today = () => new Date().toISOString().split('T')[0];
+
+/** Course-wise, date-wise attendance stored in the database. */
 export const AttendanceView: React.FC = () => {
-  const { currentUser, currentRole } = useAuth();
-  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [studentsInBatch, setStudentsInBatch] = useState<StudentProfile[]>([]);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const { currentUser } = useAuth();
+  const { notify } = useFeedback();
+  const { courses, canManage, loading: coursesLoading } = useCourseScope();
 
-  const isFacultyOrAdmin = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
-  const isStudent = currentRole === 'student';
+  const [courseId, setCourseId] = useState('');
+  const activeCourseId = courseId || courses[0]?.id || '';
+  const [date, setDate] = useState(today());
+  const uid = currentUser?.id ?? '';
 
-  const batches = db.getBatches();
-  const allStudents = db.getStudents();
+  const roster = useCloudQuery(
+    async () => (canManage && activeCourseId ? courseRoster(activeCourseId) : []),
+    [activeCourseId, canManage],
+  );
+  const dayRecords = useCloudQuery(
+    async () => (canManage && activeCourseId ? attendanceApi.listByCourse(activeCourseId, date) : []),
+    [activeCourseId, date, canManage],
+  );
+  const myRecords = useCloudQuery(
+    async () => (!canManage && uid ? attendanceApi.listByStudent(uid) : []),
+    [uid, canManage],
+  );
+
+  const [marks, setMarks] = useState<Record<string, Status>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (batches.length > 0 && !selectedBatchId) {
-      setSelectedBatchId(batches[0].id);
-    }
-  }, [batches]);
+    const existing = new Map(((dayRecords.data ?? []) as CloudAttendance[]).map((r) => [r.student_id, r.status as Status]));
+    const next: Record<string, Status> = {};
+    (roster.data ?? []).forEach((s) => { next[s.student_id] = existing.get(s.student_id) ?? 'present'; });
+    setMarks(next);
+  }, [roster.data, dayRecords.data]);
 
-  useEffect(() => {
-    if (!selectedBatchId) return;
-
-    // Load students in batch
-    const batchStudents = allStudents.filter((s) => s.batchId === selectedBatchId || !s.batchId);
-    setStudentsInBatch(batchStudents);
-
-    // Load existing attendance records for date & batch
-    const records = db.getAttendance().filter((a) => a.batchId === selectedBatchId && a.date === selectedDate);
-    setAttendanceRecords(db.getAttendance());
-
-    const map: Record<string, 'present' | 'absent' | 'late' | 'leave'> = {};
-    batchStudents.forEach((stu) => {
-      const existing = records.find((r) => r.studentId === stu.id);
-      map[stu.id] = existing ? existing.status : 'present';
-    });
-    setAttendanceMap(map);
-  }, [selectedBatchId, selectedDate]);
-
-  const handleSaveAttendance = () => {
-    const recordsToSave = studentsInBatch.map((stu) => ({
-      studentId: stu.id,
-      studentName: stu.fullName,
-      status: attendanceMap[stu.id] || 'present',
-      remarks: 'Batch daily check-in'
+  const saveAll = async () => {
+    if (!activeCourseId) return;
+    const rows = (roster.data ?? []).map((s) => ({
+      course_id: activeCourseId,
+      student_id: s.student_id,
+      attendance_date: date,
+      status: marks[s.student_id] ?? 'present',
+      marked_by: uid || null,
     }));
-
-    db.markBatchAttendance(selectedDate, selectedBatchId, recordsToSave, currentUser?.name || 'Faculty Marker');
-    alert(`Attendance marked successfully for ${recordsToSave.length} students!`);
+    if (rows.length === 0) return notify('warning', 'No enrolled students in this course');
+    setSaving(true);
+    try {
+      await attendanceApi.mark(rows);
+      notify('success', `Attendance saved for ${rows.length} student(s)`);
+      await dayRecords.reload();
+    } catch (err) {
+      notify('error', 'Could not save attendance', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Student Attendance Analytics Calculation
-  const studentProfile = isStudent && currentUser ? db.getStudentByUserId(currentUser.id) : null;
-  const myAttendanceRecords = studentProfile ? attendanceRecords.filter((a) => a.studentId === studentProfile.id) : [];
-  const presentCount = myAttendanceRecords.filter((a) => a.status === 'present').length;
-  const totalClasses = myAttendanceRecords.length;
-  const attendancePercentage = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 100;
+  const myStats = useMemo(() => {
+    const rows = (myRecords.data ?? []) as CloudAttendance[];
+    const scoped = activeCourseId ? rows.filter((r) => r.course_id === activeCourseId) : rows;
+    const present = scoped.filter((r) => r.status === 'present').length;
+    return { rows: scoped, present, total: scoped.length, pct: scoped.length ? Math.round((present / scoped.length) * 100) : 0 };
+  }, [myRecords.data, activeCourseId]);
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+      <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
-            <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
-            <span>Attendance Matrix & Analytics</span>
+          <h2 className="flex items-center gap-2 text-xl font-extrabold text-slate-900 dark:text-white">
+            <FileSpreadsheet className="h-6 w-6 text-emerald-600" /> Attendance
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Track student attendance, mark batch daily logs, and evaluate attendance percentages.
-          </p>
+          <p className="mt-1 text-xs text-slate-500">Course-wise and date-wise, saved directly to the database.</p>
         </div>
-
-        {isFacultyOrAdmin && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleSaveAttendance}
-            className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            onClick={() => void (canManage ? Promise.all([roster.reload(), dayRecords.reload()]) : myRecords.reload())}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700"
           >
-            <Save className="w-4 h-4" />
-            <span>Save Attendance Matrix</span>
+            <RefreshCw className={`h-3.5 w-3.5 ${roster.loading || myRecords.loading ? 'animate-spin' : ''}`} />
           </button>
+          {canManage && (
+            <button onClick={() => void saveAll()} disabled={saving} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md disabled:opacity-60">
+              <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save Attendance'}
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
+        <div>
+          <label className="text-[11px] font-black uppercase text-slate-500">Course</label>
+          <select value={activeCourseId} onChange={(e) => setCourseId(e.target.value)} className={`${inputCls} mt-1`}>
+            {courses.length === 0 && <option value="">{coursesLoading ? 'Loading…' : 'No courses available'}</option>}
+            {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        </div>
+        {canManage && (
+          <div>
+            <label className="text-[11px] font-black uppercase text-slate-500">Date</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${inputCls} mt-1`} />
+          </div>
         )}
       </div>
 
-      {isFacultyOrAdmin ? (
-        <div className="space-y-6">
-          {/* Controls Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Batch</label>
-              <select
-                value={selectedBatchId}
-                onChange={(e) => setSelectedBatchId(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
-              >
-                {batches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Attendance Date</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white font-bold"
-              />
-            </div>
-          </div>
-
-          {/* Student Matrix Table */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900 dark:text-white">Batch Students ({studentsInBatch.length})</span>
-              <span className="text-[11px] text-slate-500 font-mono">Date: {selectedDate}</span>
-            </div>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {studentsInBatch.map((stu) => {
-                const status = attendanceMap[stu.id] || 'present';
-                return (
-                  <div key={stu.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                    <div className="flex items-center space-x-3">
-                      <img src={stu.photoUrl} alt={stu.fullName} className="w-9 h-9 rounded-xl object-cover" />
-                      <div>
-                        <div className="text-xs font-bold text-slate-900 dark:text-white">{stu.fullName}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{stu.studentCode}</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      {(['present', 'absent', 'late', 'leave'] as const).map((st) => (
+      {canManage ? (
+        <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <table className="w-full min-w-[520px] text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+              <tr><th className="p-3">Student</th><th className="p-3">Phone</th><th className="p-3">Batch</th><th className="p-3">Status</th></tr>
+            </thead>
+            <tbody>
+              {(roster.data ?? []).map((s) => (
+                <tr key={s.student_id} className="border-t border-slate-100 dark:border-slate-800">
+                  <td className="p-3 font-bold">{s.full_name}</td>
+                  <td className="p-3">{s.phone ?? '—'}</td>
+                  <td className="p-3">{s.batch_name ?? '—'}</td>
+                  <td className="p-3">
+                    <div className="flex gap-1.5">
+                      {STATUSES.map((st) => (
                         <button
                           key={st}
-                          onClick={() => setAttendanceMap({ ...attendanceMap, [stu.id]: st })}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold capitalize transition-all cursor-pointer ${
-                            status === st
-                              ? st === 'present'
-                                ? 'bg-emerald-600 text-white shadow-sm'
-                                : st === 'absent'
-                                ? 'bg-rose-600 text-white shadow-sm'
-                                : st === 'late'
-                                ? 'bg-amber-600 text-white shadow-sm'
-                                : 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                          onClick={() => setMarks((m) => ({ ...m, [s.student_id]: st }))}
+                          className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase ${
+                            (marks[s.student_id] ?? 'present') === st
+                              ? st === 'present' ? 'bg-emerald-600 text-white' : st === 'absent' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'
+                              : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
                           }`}
                         >
                           {st}
                         </button>
                       ))}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Student Attendance Summary & History */
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center">
-              <div className="text-xs text-slate-400">Total Classes Conducted</div>
-              <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">{totalClasses}</div>
-            </div>
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center">
-              <div className="text-xs text-slate-400">Present Classes</div>
-              <div className="text-2xl font-extrabold text-emerald-500 mt-1">{presentCount}</div>
-            </div>
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center">
-              <div className="text-xs text-slate-400">Attendance Percentage</div>
-              <div className="text-2xl font-extrabold text-blue-500 mt-1">{attendancePercentage}%</div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">My Historical Attendance Log</h3>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {myAttendanceRecords.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">No attendance logs found yet.</div>
-              ) : (
-                myAttendanceRecords.map((r) => (
-                  <div key={r.id} className="py-3 flex items-center justify-between text-xs">
-                    <span className="font-mono text-slate-600 dark:text-slate-300">{r.date}</span>
-                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${
-                      r.status === 'present' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                    }`}>
-                      {r.status}
-                    </span>
-                  </div>
-                ))
+                  </td>
+                </tr>
+              ))}
+              {!roster.loading && (roster.data ?? []).length === 0 && (
+                <tr><td colSpan={4} className="p-8 text-center text-slate-500">No students enrolled in this course yet.</td></tr>
               )}
-            </div>
+            </tbody>
+          </table>
+        </section>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Classes" value={String(myStats.total)} icon={<Clock className="h-4 w-4" />} />
+            <Stat label="Present" value={String(myStats.present)} tone="text-emerald-600" icon={<CheckCircle2 className="h-4 w-4" />} />
+            <Stat label="Absent" value={String(myStats.total - myStats.present)} tone="text-rose-600" icon={<XCircle className="h-4 w-4" />} />
+            <Stat label="Attendance %" value={`${myStats.pct}%`} tone="text-blue-600" />
           </div>
-        </div>
+          <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <table className="w-full min-w-[420px] text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+                <tr><th className="p-3">Date</th><th className="p-3">Status</th><th className="p-3">Remarks</th></tr>
+              </thead>
+              <tbody>
+                {myStats.rows.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="p-3">{new Date(r.attendance_date).toLocaleDateString('en-IN')}</td>
+                    <td className="p-3 font-bold uppercase">{r.status}</td>
+                    <td className="p-3">{r.remarks ?? '—'}</td>
+                  </tr>
+                ))}
+                {myStats.rows.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-slate-500">No attendance recorded for this course yet.</td></tr>}
+              </tbody>
+            </table>
+          </section>
+        </>
       )}
     </div>
   );
 };
+
+const Stat: React.FC<{ label: string; value: string; tone?: string; icon?: React.ReactNode }> = ({ label, value, tone, icon }) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+    <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-500">{icon}{label}</p>
+    <p className={`text-lg font-black ${tone ?? 'text-slate-900 dark:text-white'}`}>{value}</p>
+  </div>
+);
