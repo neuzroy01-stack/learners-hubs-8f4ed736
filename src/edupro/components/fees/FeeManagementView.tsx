@@ -1,1508 +1,427 @@
-import React, { useState } from 'react';
-import { db } from '../../services/db';
-import { PaymentRecord, StaffSalaryRecord } from '../../types/lms';
-import { useAuth } from '../../context/AuthContext';
-import { ReceiptModal } from '../common/ReceiptModal';
-import { PayFeeModal } from './PayFeeModal';
-import { useFeedback } from '../common/Feedback';
-
+import React, { useMemo, useState } from 'react';
 import {
-  CreditCard,
-  Plus,
+  Wallet,
+  RefreshCw,
   Search,
-  Printer,
-  DollarSign,
-  TrendingUp,
-  AlertCircle,
-  FileText,
-  CheckCircle2,
-  Check,
-  X,
-  Users,
-  ShieldCheck,
-  CheckCircle,
-  Clock,
-  Building,
-  Calendar,
-  Eye,
-  RotateCcw,
-  Pencil,
+  Plus,
   Trash2,
-  History
+  IndianRupee,
+  ReceiptText,
+  X,
 } from 'lucide-react';
+import {
+  revenueSummary,
+  studentFinance,
+  studentEnrollments,
+  feesApi,
+  paymentsApi,
+  type StudentLedgerRow,
+} from '../../services/cloudDb';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { useAuth } from '../../context/AuthContext';
+import { useFeedback } from '../common/Feedback';
+import { MyCloudFeesView } from './MyCloudFeesView';
 
+const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+const inputCls =
+  'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800';
+
+/**
+ * Staff fee & ledger console.
+ * Every read and write is addressed by the student's database UUID, so a fee
+ * can never land on another student's record.
+ */
 export const FeeManagementView: React.FC = () => {
-  const { currentUser, currentRole } = useAuth();
+  const { currentRole } = useAuth();
+  const isStaff = currentRole === 'admin' || currentRole === 'super_admin' || currentRole === 'teacher';
+
+  if (!isStaff) return <MyCloudFeesView />;
+  return <StaffFeeConsole />;
+};
+
+const StaffFeeConsole: React.FC = () => {
   const { notify, confirm } = useFeedback();
-  const [activeTab, setActiveTab] = useState<'ledger' | 'verification' | 'salaries' | 'history'>('ledger');
-  const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
-  const [selectedPayslip, setSelectedPayslip] = useState<StaffSalaryRecord | null>(null);
-  const [showPayFeeModal, setShowPayFeeModal] = useState(false);
-  const [, setRefreshTick] = useState(0);
-  const refresh = () => setRefreshTick((t) => t + 1);
+  const [search, setSearch] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [showFee, setShowFee] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
 
-  // Super Admin edit modals
-  const [editPayment, setEditPayment] = useState<PaymentRecord | null>(null);
-  const [editSalary, setEditSalary] = useState<StaffSalaryRecord | null>(null);
+  const summary = useCloudQuery(() => revenueSummary(), []);
+  const ledger = useCloudQuery(async () => (studentId ? studentFinance(studentId) : null), [studentId]);
+  const enrollments = useCloudQuery(async () => (studentId ? studentEnrollments(studentId) : []), [studentId]);
 
-  // History filters
-  const [historyFrom, setHistoryFrom] = useState('');
-  const [historyTo, setHistoryTo] = useState('');
-  const [historyQuery, setHistoryQuery] = useState('');
+  const students = useMemo(() => summary.data?.perStudent ?? [], [summary.data]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(
+      (s) => s.full_name.toLowerCase().includes(q) || (s.phone ?? '').includes(q),
+    );
+  }, [students, search]);
 
+  const selected: StudentLedgerRow | undefined = students.find((s) => s.student_id === studentId);
 
-  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
-  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
-  const [showSalaryModal, setShowSalaryModal] = useState(false);
-  const [verificationModalPayment, setVerificationModalPayment] = useState<PaymentRecord | null>(null);
-  const [verifyRemarks, setVerifyRemarks] = useState('');
+  const refreshAll = async () => {
+    await Promise.all([summary.reload(), ledger.reload()]);
+  };
 
-  // Record Payment Form (Clean defaults per requirement 2)
-  const [payStudentId, setPayStudentId] = useState('');
-  const [payAmount, setPayAmount] = useState<number | ''>(0);
-  const [payMode, setPayMode] = useState<'Cash' | 'UPI' | 'Net Banking' | 'Credit Card' | 'Cheque'>('UPI');
-  const [payUtr, setPayUtr] = useState('');
-  const [payRemarks, setPayRemarks] = useState('');
-
-  // Adjustment Form (Clean defaults per requirement 3)
-  const [adjStudentId, setAdjStudentId] = useState('');
-  const [adjType, setAdjType] = useState<'extra_charge' | 'discount' | 'late_fee' | 'scholarship'>('discount');
-  const [adjAmount, setAdjAmount] = useState<number | ''>(0);
-  const [adjReason, setAdjReason] = useState('');
-
-  // Salary Form
-  const [salTeacherId, setSalTeacherId] = useState('');
-  const [salMonth, setSalMonth] = useState('July 2026');
-  const [salBase, setSalBase] = useState(85000);
-  const [salBonus, setSalBonus] = useState(0);
-  const [salDeductions, setSalDeductions] = useState(0);
-  const [salMode, setSalMode] = useState('Bank Transfer (NEFT)');
-  const [salUtr, setSalUtr] = useState('');
-  const [salRemarks, setSalRemarks] = useState('');
-
-  const students = db.getStudents();
-  const teachers = db.getTeachers();
-  const enrollments = db.getEnrollments();
-  const payments = db.getPayments();
-  const settings = db.getSettings();
-  const salaries = db.getStaffSalaries();
-
-  const isStudent = currentRole === 'student';
-  const isAdmin = currentRole === 'admin' || currentRole === 'super_admin';
-  const isSuperAdmin = currentRole === 'super_admin';
-  const actorId = currentUser?.id || 'usr-superadmin';
-  const actorName = currentUser?.name || 'Super Admin';
-
-  const handleDeletePayment = async (p: PaymentRecord) => {
-    const { ok, reason } = await confirm({
-      title: 'Delete fee payment?',
-      message: `Receipt ${p.receiptNumber} of ${settings.currencySymbol}${p.amount.toLocaleString()} for ${p.studentName} will be removed. Fee totals will be recalculated automatically and this action is recorded in the audit trail.`,
-      confirmLabel: 'Delete payment',
-      requireReason: true
-    });
-    if (!ok) return;
+  const removeFee = async (id: string) => {
+    const res = await confirm({ title: 'Delete fee line?', message: 'This removes the billed amount from this student only.', tone: 'danger', confirmLabel: 'Delete' });
+    if (!res.ok) return;
     try {
-      db.deletePayment(p.id, reason, actorId, actorName);
-      notify('success', 'Payment deleted', `${p.receiptNumber} removed. Fee balances recalculated.`);
-      refresh();
-    } catch (err: any) {
-      notify('error', 'Delete failed', err?.message || 'Could not delete this payment.');
+      await feesApi.remove(id);
+      notify('success', 'Fee line removed');
+      await refreshAll();
+    } catch (e) {
+      notify('error', 'Could not delete', (e as Error).message);
     }
   };
 
-  const handleSavePaymentEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editPayment) return;
+  const removePayment = async (id: string) => {
+    const res = await confirm({ title: 'Delete payment?', message: 'The paid amount will be reversed for this student.', tone: 'danger', confirmLabel: 'Delete' });
+    if (!res.ok) return;
     try {
-      db.updatePayment(
-        editPayment.id,
-        {
-          amount: Number(editPayment.amount) || 0,
-          paymentDate: editPayment.paymentDate,
-          paymentMode: editPayment.paymentMode,
-          transactionId: editPayment.transactionId || 'N/A',
-          status: editPayment.status,
-          remarks: editPayment.remarks
-        },
-        actorId,
-        actorName
-      );
-      notify('success', 'Payment updated', `${editPayment.receiptNumber} saved and totals recalculated.`);
-      setEditPayment(null);
-      refresh();
-    } catch (err: any) {
-      notify('error', 'Update failed', err?.message || 'Could not update this payment.');
+      await paymentsApi.remove(id);
+      notify('success', 'Payment removed');
+      await refreshAll();
+    } catch (e) {
+      notify('error', 'Could not delete', (e as Error).message);
     }
-  };
-
-  const handleDeleteSalary = async (sal: StaffSalaryRecord) => {
-    const { ok, reason } = await confirm({
-      title: 'Delete salary voucher?',
-      message: `${sal.teacherName} — ${sal.monthYear} (${settings.currencySymbol}${sal.netSalary.toLocaleString()}) will be removed from payroll. The deletion is archived with your name, time and reason.`,
-      confirmLabel: 'Delete salary',
-      requireReason: true
-    });
-    if (!ok) return;
-    db.deleteStaffSalary(sal.id, reason, actorId, actorName);
-    notify('success', 'Salary voucher deleted', `${sal.teacherName} — ${sal.monthYear} removed from payroll.`);
-    refresh();
-  };
-
-  const handleSaveSalaryEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editSalary) return;
-    db.updateStaffSalary(
-      editSalary.id,
-      {
-        monthYear: editSalary.monthYear,
-        baseSalary: Number(editSalary.baseSalary) || 0,
-        bonus: Number(editSalary.bonus) || 0,
-        deductions: Number(editSalary.deductions) || 0,
-        paidAmount: Number(editSalary.paidAmount) || 0,
-        paymentMode: editSalary.paymentMode,
-        transactionId: editSalary.transactionId,
-        remarks: editSalary.remarks
-      },
-      actorId,
-      actorName
-    );
-    notify('success', 'Salary updated', `${editSalary.teacherName} — ${editSalary.monthYear} saved.`);
-    setEditSalary(null);
-    refresh();
-  };
-
-  // Security RLS filter for student
-  const studentProfile = isStudent ? students.find((s) => s.userId === currentUser?.id) : null;
-  const filteredPayments = isStudent
-    ? payments.filter((p) => p.studentId === studentProfile?.id)
-    : payments;
-
-  const pendingPayments = payments.filter((p) => p.status === 'pending_verification');
-  const approvedPayments = filteredPayments.filter((p) => p.status === 'approved');
-  const totalRevenue = approvedPayments.reduce((sum, p) => sum + p.amount, 0);
-
-  // Initialize student IDs on load
-  React.useEffect(() => {
-    if (isStudent && studentProfile) {
-      setPayStudentId(studentProfile.id);
-      setAdjStudentId(studentProfile.id);
-    } else if (students.length > 0) {
-      setPayStudentId(students[0].id);
-      setAdjStudentId(students[0].id);
-    }
-    if (teachers.length > 0) {
-      setSalTeacherId(teachers[0].id);
-    }
-  }, [isStudent, studentProfile, students, teachers]);
-
-  const openRecordPaymentModal = () => {
-    if (isStudent) {
-      setShowPayFeeModal(true);
-      return;
-    }
-    setPayAmount(0);
-    setPayUtr('');
-    setPayRemarks('');
-    if (students.length > 0 && !payStudentId) {
-      setPayStudentId(students[0].id);
-    }
-    setShowRecordPaymentModal(true);
-  };
-
-
-  const openAdjustmentModal = () => {
-    setAdjAmount(0);
-    setAdjReason('');
-    if (isStudent && studentProfile) {
-      setAdjStudentId(studentProfile.id);
-    } else if (students.length > 0 && !adjStudentId) {
-      setAdjStudentId(students[0].id);
-    }
-    setShowAdjustmentModal(true);
-  };
-
-  const handleRecordPaymentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const student = isStudent ? studentProfile : (students.find((s) => s.id === payStudentId) || students[0]);
-    if (!student) return;
-
-    const enrollment = enrollments.find((e) => e.studentId === student.id) || enrollments[0];
-    const receiptNumber = `RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const newPayment: PaymentRecord = {
-      id: `pay-${Date.now()}`,
-      enrollmentId: enrollment?.id || 'enr-default',
-      studentId: student.id,
-      studentName: student.fullName,
-      courseTitle: enrollment?.courseTitle || 'Full-Stack MERN Enterprise Engineering',
-      receiptNumber,
-      amount: Number(payAmount) || 0,
-      paymentDate: new Date().toISOString().split('T')[0],
-      paymentMode: payMode,
-      transactionId: payUtr || 'N/A',
-      status: isStudent ? 'pending_verification' : 'approved',
-      remarks: payRemarks || 'Fee Payment',
-      recordedBy: currentUser?.name || 'Academic Admin',
-      verifiedAt: isStudent ? undefined : new Date().toISOString()
-    };
-
-    db.recordPayment(newPayment);
-    db.logActivity(
-      currentUser?.id || 'usr-admin',
-      currentUser?.name || 'Admin',
-      currentRole,
-      'RECORD_PAYMENT',
-      student.fullName,
-      `Recorded payment of ${settings.currencySymbol}${payAmount} (${receiptNumber})`
-    );
-
-    setShowRecordPaymentModal(false);
-    setSelectedReceipt(newPayment);
-  };
-
-  const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const student = isStudent ? studentProfile : (students.find((s) => s.id === adjStudentId) || students[0]);
-    if (!student) return;
-
-    const enrollment = enrollments.find((e) => e.studentId === student.id) || enrollments[0];
-    const isDiscount = adjType === 'discount' || adjType === 'scholarship';
-    const numAmount = Number(adjAmount) || 0;
-    const finalAmount = isDiscount ? -Math.abs(numAmount) : Math.abs(numAmount);
-
-    db.addFeeAdjustment({
-      id: `adj-${Date.now()}`,
-      enrollmentId: enrollment?.id || 'enr-default',
-      studentId: student.id,
-      type: adjType,
-      amount: finalAmount,
-      reason: adjReason || 'Fee Adjustment',
-      date: new Date().toISOString().split('T')[0],
-      createdBy: currentUser?.name || 'Academic Admin'
-    });
-
-    db.logActivity(
-      currentUser?.id || 'usr-admin',
-      currentUser?.name || 'Admin',
-      currentRole,
-      'FEE_ADJUSTMENT',
-      student.fullName,
-      `Applied ${adjType} of ${settings.currencySymbol}${adjAmount}`
-    );
-
-    setShowAdjustmentModal(false);
-  };
-
-  const handleVerifyPayment = (status: 'approved' | 'rejected' | 'pending_verification') => {
-    if (!verificationModalPayment) return;
-    db.verifyPayment(
-      verificationModalPayment.id,
-      status,
-      verifyRemarks,
-      currentUser?.name || 'Super Admin'
-    );
-    setVerificationModalPayment(null);
-    setVerifyRemarks('');
-  };
-
-  const handleRecordSalarySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const teacher = teachers.find((t) => t.id === salTeacherId) || teachers[0];
-    if (!teacher) return;
-
-    const net = (Number(salBase) || 0) + (Number(salBonus) || 0) - (Number(salDeductions) || 0);
-
-    const salaryRec: StaffSalaryRecord = {
-      id: `sal-${Date.now()}`,
-      teacherId: teacher.id,
-      teacherName: teacher.fullName,
-      monthYear: salMonth,
-      baseSalary: Number(salBase) || 0,
-      bonus: Number(salBonus) || 0,
-      deductions: Number(salDeductions) || 0,
-      netSalary: net,
-      paidAmount: net,
-      pendingSalary: 0,
-      paymentDate: new Date().toISOString().split('T')[0],
-      paymentMode: salMode,
-      transactionId: salUtr || `NEFT-${Math.floor(100000 + Math.random() * 900000)}`,
-      status: 'paid',
-      remarks: salRemarks || 'Monthly Payroll Cleared'
-    };
-
-    db.saveStaffSalary(salaryRec);
-    db.logActivity(
-      currentUser?.id || 'usr-admin',
-      currentUser?.name || 'Admin',
-      currentRole,
-      'RECORD_SALARY',
-      teacher.fullName,
-      `Disbursed salary payout of ${settings.currencySymbol}${net} for ${salMonth}`
-    );
-
-    setShowSalaryModal(false);
-    setSelectedPayslip(salaryRec);
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header Controls */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+      <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center space-x-2">
-            <CreditCard className="w-6 h-6 text-emerald-600" />
-            <span>Fee Ledger, Payments & Staff Payroll</span>
+          <h1 className="flex items-center gap-2 text-xl font-black text-slate-900 dark:text-white">
+            <Wallet className="h-6 w-6 text-emerald-600" /> Fees, Payments & Ledger
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {isStudent
-              ? 'View your payment receipts, fee ledger statement, and submit installment payments.'
-              : 'Record student fee receipts, verify online payment submissions, and manage staff salary disbursement.'}
+          <p className="mt-1 text-xs text-slate-500">
+            Live from the database. Pick a student, then bill or collect — records are matched by student ID, never by name.
           </p>
         </div>
+        <button onClick={() => void refreshAll()} className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
+          <RefreshCw className={`h-3.5 w-3.5 ${summary.loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </header>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {!isStudent && (
-            <button
-              onClick={openAdjustmentModal}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center space-x-2 transition-all cursor-pointer"
-            >
-              <FileText className="w-4 h-4 text-purple-600" />
-              <span>Apply Discount / Adjustment</span>
-            </button>
+      {summary.error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{summary.error}</p>}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Total Billed" value={money(summary.data?.totalBilled ?? 0)} />
+        <Stat label="Collected" value={money(summary.data?.totalCollected ?? 0)} tone="text-emerald-600" />
+        <Stat label="Pending" value={money(summary.data?.totalPending ?? 0)} tone="text-rose-600" />
+        <Stat label="Students" value={String(summary.data?.studentCount ?? 0)} tone="text-blue-600" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        <aside className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search student by name or phone…"
+              className={`${inputCls} pl-9`}
+            />
+          </div>
+          <ul className="mt-3 max-h-[520px] space-y-1 overflow-y-auto">
+            {filtered.map((s) => (
+              <li key={s.student_id}>
+                <button
+                  onClick={() => setStudentId(s.student_id)}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-xs ${
+                    s.student_id === studentId ? 'bg-emerald-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="block font-bold">{s.full_name}</span>
+                  <span className={`block text-[10px] ${s.student_id === studentId ? 'text-emerald-100' : 'text-slate-500'}`}>
+                    {s.phone ?? '—'} · Pending {money(s.outstanding)}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {filtered.length === 0 && <li className="p-6 text-center text-xs text-slate-500">No students found.</li>}
+          </ul>
+        </aside>
+
+        <section className="space-y-4">
+          {!studentId && (
+            <p className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700">
+              Select a student to open their ledger.
+            </p>
           )}
 
-          <button
-            onClick={openRecordPaymentModal}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isStudent ? 'Pay Fee Installment' : 'Record Fee Payment'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Tabs Navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab('ledger')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
-            activeTab === 'ledger'
-              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>Payment Ledger ({filteredPayments.length})</span>
-        </button>
-
-        {isAdmin && (
-          <>
-            <button
-              onClick={() => setActiveTab('verification')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer relative ${
-                activeTab === 'verification'
-                  ? 'bg-amber-600 text-white shadow-md'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Fee Verification Queue</span>
-              {pendingPayments.length > 0 && (
-                <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-black rounded-full animate-pulse">
-                  {pendingPayments.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('salaries')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
-                activeTab === 'salaries'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Staff Salary & Payroll</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer ${
-                activeTab === 'history'
-                  ? 'bg-slate-700 text-white shadow-md'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              <span>Transaction History</span>
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Financial Summary Stat Cards */}
-      {activeTab !== 'salaries' && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <span className="text-xs font-semibold text-slate-500">Total Settled Collections</span>
-            <div className="text-2xl font-black text-emerald-600 mt-1">
-              {settings.currencySymbol}{totalRevenue.toLocaleString()}
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1">{approvedPayments.length} Approved Receipts</div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <span className="text-xs font-semibold text-slate-500">Enrolled Course Total Value</span>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-              {settings.currencySymbol}
-              {(isStudent && studentProfile
-                ? enrollments.filter((e) => e.studentId === studentProfile.id)
-                : enrollments
-              ).reduce((sum, e) => sum + e.finalFee, 0).toLocaleString()}
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1">
-              {isStudent ? 'Your Course Enrollment' : `${enrollments.length} Active Student Enrollments`}
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <span className="text-xs font-semibold text-slate-500">Outstanding Balance Due</span>
-            <div className="text-2xl font-black text-rose-600 mt-1">
-              {settings.currencySymbol}
-              {Math.max(
-                0,
-                (isStudent && studentProfile
-                  ? enrollments.filter((e) => e.studentId === studentProfile.id)
-                  : enrollments
-                ).reduce((sum, e) => sum + e.finalFee, 0) - totalRevenue
-              ).toLocaleString()}
-            </div>
-            <div className="text-[11px] text-rose-500 font-bold mt-1">Pending Clearance</div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 1: Payment History Ledger */}
-      {activeTab === 'ledger' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Payment Receipts & Transaction Ledger</h3>
-            <span className="text-xs text-slate-400 font-semibold">{filteredPayments.length} Records</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="p-3.5">Receipt No.</th>
-                  {!isStudent && <th className="p-3.5">Student Name</th>}
-                  <th className="p-3.5">Course Title</th>
-                  <th className="p-3.5">Amount Paid</th>
-                  <th className="p-3.5">Mode / UTR</th>
-                  <th className="p-3.5">Date</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5 text-right">Receipt</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-400">
-                      No payment transaction records found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPayments.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="p-3.5 font-mono font-bold text-blue-600 dark:text-blue-400">{p.receiptNumber}</td>
-                      {!isStudent && <td className="p-3.5 font-bold text-slate-900 dark:text-white">{p.studentName}</td>}
-                      <td className="p-3.5 text-slate-600 dark:text-slate-300">{p.courseTitle}</td>
-                      <td className="p-3.5 font-mono font-bold text-emerald-600">
-                        {settings.currencySymbol}{p.amount.toLocaleString()}
-                      </td>
-                      <td className="p-3.5 text-slate-500 dark:text-slate-400">
-                        <div className="font-semibold">{p.paymentMode}</div>
-                        <div className="text-[10px] font-mono">{p.transactionId}</div>
-                      </td>
-                      <td className="p-3.5 text-slate-400">{p.paymentDate}</td>
-                      <td className="p-3.5">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            p.status === 'approved'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : p.status === 'pending_verification'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {p.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => setSelectedReceipt(p)}
-                            className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Print Receipt</span>
-                          </button>
-                          {isSuperAdmin && (
-                            <>
-                              <button
-                                onClick={() => setEditPayment({ ...p })}
-                                title="Edit payment"
-                                className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 cursor-pointer"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeletePayment(p)}
-                                title="Delete payment"
-                                className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: Fee Verification Queue (Admin Only) */}
-      {activeTab === 'verification' && isAdmin && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden space-y-4 p-6">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-                <ShieldCheck className="w-5 h-5 text-amber-500" />
-                <span>Pending Payment Verification Queue</span>
-              </h3>
-              <p className="text-xs text-slate-500">Verify online UPI/NEFT transaction proofs uploaded by students.</p>
-            </div>
-            <span className="px-3 py-1 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-xs font-extrabold rounded-full">
-              {pendingPayments.length} Pending Approvals
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {pendingPayments.length === 0 ? (
-              <div className="col-span-2 p-12 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-                <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">All Pending Receipts Verified!</p>
-                <p className="text-xs text-slate-400 mt-1">There are no pending student fee submissions waiting for verification.</p>
-              </div>
-            ) : (
-              pendingPayments.map((p) => (
-                <div key={p.id} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold text-blue-600">{p.receiptNumber}</span>
-                      <h4 className="font-bold text-slate-900 dark:text-white text-sm">{p.studentName}</h4>
-                      <p className="text-xs text-slate-500">{p.courseTitle}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-lg font-black text-emerald-600">{settings.currencySymbol}{p.amount.toLocaleString()}</span>
-                      <div className="text-[10px] text-slate-400">{p.paymentDate}</div>
-                    </div>
+          {studentId && ledger.data && (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 dark:text-white">{selected?.full_name ?? 'Student'}</h2>
+                    <p className="font-mono text-[10px] text-slate-400">ID: {studentId}</p>
                   </div>
-
-                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400 font-semibold">Payment Mode:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">{p.paymentMode}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400 font-semibold">UTR / Transaction ID:</span>
-                      <span className="font-mono font-bold text-blue-600">{p.transactionId}</span>
-                    </div>
-                    {p.remarks && (
-                      <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-                        <span className="text-slate-400 font-semibold">Remarks:</span>
-                        <span className="text-slate-600 dark:text-slate-300">{p.remarks}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center space-x-2 pt-2">
-                    <button
-                      onClick={() => {
-                        setVerificationModalPayment(p);
-                        setVerifyRemarks('Approved after verifying UTR bank statement');
-                      }}
-                      className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-                    >
-                      Approve Payment
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowFee(true)} className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">
+                      <Plus className="h-3.5 w-3.5" /> Add fee
                     </button>
-                    <button
-                      onClick={() => {
-                        setVerificationModalPayment(p);
-                        setVerifyRemarks('Invalid UTR / Transaction ID missing from bank records');
-                      }}
-                      className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-                    >
-                      Reject Submission
+                    <button onClick={() => setShowPayment(true)} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white">
+                      <IndianRupee className="h-3.5 w-3.5" /> Record payment
                     </button>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: Staff Salary Module (Requirement 8) */}
-      {activeTab === 'salaries' && isAdmin && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-                <Users className="w-5 h-5 text-indigo-600" />
-                <span>Faculty & Staff Salary Payroll Desk</span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Process monthly faculty salaries, record bonuses, track pending disbursements, and print payslips.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                setSalBase(85000);
-                setSalBonus(0);
-                setSalDeductions(0);
-                setSalUtr('');
-                setSalRemarks('');
-                setShowSalaryModal(true);
-              }}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Record Salary Disbursal</span>
-            </button>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Monthly Payroll Records</h4>
-              <span className="text-xs text-slate-400 font-mono">{salaries.length} Salary Vouchers</span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800">
-                  <tr>
-                    <th className="p-3.5">Faculty / Staff Name</th>
-                    <th className="p-3.5">Month & Year</th>
-                    <th className="p-3.5">Base Salary</th>
-                    <th className="p-3.5">Bonus / Incentives</th>
-                    <th className="p-3.5">Net Disbursed</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {salaries.map((sal) => (
-                    <tr key={sal.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                      <td className="p-3.5 font-bold text-slate-900 dark:text-white">{sal.teacherName}</td>
-                      <td className="p-3.5 text-slate-600 dark:text-slate-300 font-semibold">{sal.monthYear}</td>
-                      <td className="p-3.5 font-mono text-slate-600">{settings.currencySymbol}{sal.baseSalary.toLocaleString()}</td>
-                      <td className="p-3.5 font-mono text-emerald-600 font-bold">+{settings.currencySymbol}{sal.bonus.toLocaleString()}</td>
-                      <td className="p-3.5 font-mono font-black text-indigo-600">{settings.currencySymbol}{sal.netSalary.toLocaleString()}</td>
-                      <td className="p-3.5">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            sal.status === 'paid'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {sal.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => setSelectedPayslip(sal)}
-                            className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Print Payslip</span>
-                          </button>
-                          {isSuperAdmin && (
-                            <>
-                              <button
-                                onClick={() => setEditSalary({ ...sal })}
-                                title="Edit salary voucher"
-                                className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 cursor-pointer"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSalary(sal)}
-                                title="Delete salary voucher"
-                                className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Date-wise Transaction History (Fees + Salaries) */}
-      {activeTab === 'history' && isAdmin && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 gap-3 sm:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">From date</label>
-              <input
-                type="date"
-                value={historyFrom}
-                onChange={(e) => setHistoryFrom(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">To date</label>
-              <input
-                type="date"
-                value={historyTo}
-                onChange={(e) => setHistoryTo(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">Search name / receipt / UTR</label>
-              <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 dark:border-slate-700 dark:bg-slate-800">
-                <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <input
-                  value={historyQuery}
-                  onChange={(e) => setHistoryQuery(e.target.value)}
-                  placeholder="Type to filter transactions..."
-                  className="w-full bg-transparent py-2 text-xs text-slate-900 focus:outline-none dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          {(() => {
-            const rows = [
-              ...payments.map((p) => ({
-                id: p.id,
-                date: p.paymentDate,
-                kind: 'Fee Collection',
-                party: p.studentName,
-                ref: `${p.receiptNumber} · ${p.transactionId}`,
-                amount: p.amount,
-                direction: 'in' as const,
-                status: p.status.replace('_', ' ')
-              })),
-              ...salaries.map((s) => ({
-                id: s.id,
-                date: s.paymentDate || s.monthYear,
-                kind: 'Salary Disbursal',
-                party: s.teacherName,
-                ref: `${s.monthYear} · ${s.transactionId || 'N/A'}`,
-                amount: s.paidAmount,
-                direction: 'out' as const,
-                status: s.status
-              }))
-            ]
-              .filter((r) => {
-                if (historyFrom && r.date < historyFrom) return false;
-                if (historyTo && r.date > historyTo) return false;
-                if (historyQuery) {
-                  const q = historyQuery.toLowerCase();
-                  return `${r.party} ${r.ref} ${r.kind}`.toLowerCase().includes(q);
-                }
-                return true;
-              })
-              .sort((a, b) => (a.date < b.date ? 1 : -1));
-
-            const inflow = rows.filter((r) => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
-            const outflow = rows.filter((r) => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
-
-            return (
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:grid-cols-3">
-                  <div className="text-xs">
-                    <div className="font-semibold text-slate-500">Transactions</div>
-                    <div className="text-lg font-black text-slate-900 dark:text-white">{rows.length}</div>
-                  </div>
-                  <div className="text-xs">
-                    <div className="font-semibold text-slate-500">Fee Inflow</div>
-                    <div className="text-lg font-black text-emerald-600">{settings.currencySymbol}{inflow.toLocaleString()}</div>
-                  </div>
-                  <div className="text-xs">
-                    <div className="font-semibold text-slate-500">Salary Outflow</div>
-                    <div className="text-lg font-black text-rose-600">{settings.currencySymbol}{outflow.toLocaleString()}</div>
-                  </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat label="Total Fees" value={money(ledger.data.total)} />
+                  <Stat label="Paid" value={money(ledger.data.paid)} tone="text-emerald-600" />
+                  <Stat label="Pending" value={money(ledger.data.outstanding)} tone="text-rose-600" />
+                  <Stat label="Status" value={ledger.data.status} tone="text-blue-600" />
                 </div>
+              </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
-                      <tr>
-                        <th className="p-3.5">Date</th>
-                        <th className="p-3.5">Type</th>
-                        <th className="p-3.5">Party</th>
-                        <th className="p-3.5">Reference</th>
-                        <th className="p-3.5">Amount</th>
-                        <th className="p-3.5">Status</th>
+              <Panel title="Fee lines">
+                <table className="w-full min-w-[560px] text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+                    <tr><th className="p-3">Type</th><th className="p-3">Amount</th><th className="p-3">Tax</th><th className="p-3">Discount</th><th className="p-3">Due</th><th className="p-3" /></tr>
+                  </thead>
+                  <tbody>
+                    {ledger.data.fees.map((f) => (
+                      <tr key={f.id} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="p-3 capitalize">{f.fee_type}</td>
+                        <td className="p-3 font-bold">{money(Number(f.amount))}</td>
+                        <td className="p-3">{money(Number(f.tax_amount))}</td>
+                        <td className="p-3">{money(Number(f.discount))}</td>
+                        <td className="p-3">{f.due_date ? new Date(f.due_date).toLocaleDateString('en-IN') : '—'}</td>
+                        <td className="p-3 text-right">
+                          <button onClick={() => void removeFee(f.id)} className="text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-8 text-center text-slate-400">No transactions in this date range.</td>
-                        </tr>
-                      ) : (
-                        rows.map((r) => (
-                          <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                            <td className="p-3.5 font-mono text-slate-500">{r.date}</td>
-                            <td className="p-3.5 font-bold text-slate-900 dark:text-white">{r.kind}</td>
-                            <td className="p-3.5 text-slate-600 dark:text-slate-300">{r.party}</td>
-                            <td className="p-3.5 font-mono text-[10px] text-slate-500">{r.ref}</td>
-                            <td className={`p-3.5 font-mono font-bold ${r.direction === 'in' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              {r.direction === 'in' ? '+' : '−'}{settings.currencySymbol}{r.amount.toLocaleString()}
-                            </td>
-                            <td className="p-3.5 capitalize text-slate-500">{r.status}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Super Admin — Edit Payment Modal */}
-      {editPayment && isSuperAdmin && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={handleSavePaymentEdit}
-            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Payment · {editPayment.receiptNumber}</h3>
-              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Amount</label>
-                <input
-                  type="number"
-                  value={editPayment.amount}
-                  onChange={(e) => setEditPayment({ ...editPayment, amount: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Payment date</label>
-                <input
-                  type="date"
-                  value={editPayment.paymentDate}
-                  onChange={(e) => setEditPayment({ ...editPayment, paymentDate: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Mode</label>
-                <select
-                  value={editPayment.paymentMode}
-                  onChange={(e) => setEditPayment({ ...editPayment, paymentMode: e.target.value as PaymentRecord['paymentMode'] })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  {['Cash', 'UPI', 'Net Banking', 'Credit Card', 'Cheque'].map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Status</label>
-                <select
-                  value={editPayment.status}
-                  onChange={(e) => setEditPayment({ ...editPayment, status: e.target.value as PaymentRecord['status'] })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="approved">Approved</option>
-                  <option value="pending_verification">Pending verification</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction / UTR</label>
-                <input
-                  value={editPayment.transactionId}
-                  onChange={(e) => setEditPayment({ ...editPayment, transactionId: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
-                <input
-                  value={editPayment.remarks || ''}
-                  onChange={(e) => setEditPayment({ ...editPayment, remarks: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEditPayment(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                Cancel
-              </button>
-              <button type="submit" className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">
-                Save changes
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Super Admin — Edit Salary Modal */}
-      {editSalary && isSuperAdmin && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={handleSaveSalaryEdit}
-            className="w-full max-w-md space-y-3 rounded-2xl border border-slate-200 bg-white p-6 text-xs shadow-2xl dark:border-slate-800 dark:bg-slate-900"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Salary · {editSalary.teacherName}</h3>
-              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Month &amp; Year</label>
-                <input
-                  value={editSalary.monthYear}
-                  onChange={(e) => setEditSalary({ ...editSalary, monthYear: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              {([
-                ['baseSalary', 'Base salary'],
-                ['bonus', 'Bonus'],
-                ['deductions', 'Deductions'],
-                ['paidAmount', 'Paid amount']
-              ] as const).map(([field, label]) => (
-                <div key={field}>
-                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">{label}</label>
-                  <input
-                    type="number"
-                    value={editSalary[field]}
-                    onChange={(e) => setEditSalary({ ...editSalary, [field]: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-              ))}
-              <div className="col-span-2">
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Transaction reference</label>
-                <input
-                  value={editSalary.transactionId || ''}
-                  onChange={(e) => setEditSalary({ ...editSalary, transactionId: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">Remarks</label>
-                <input
-                  value={editSalary.remarks || ''}
-                  onChange={(e) => setEditSalary({ ...editSalary, remarks: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-            </div>
-
-            <p className="rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-500 dark:bg-slate-800/60">
-              Net salary recalculates automatically as base + bonus − deductions, and the status updates from the paid amount.
-            </p>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setEditSalary(null)} className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                Cancel
-              </button>
-              <button type="submit" className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white hover:bg-indigo-700">
-                Save changes
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-
-
-      {/* Record Payment Modal */}
-      {showRecordPaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {isStudent ? 'Pay Fee Installment' : 'Record Fee Payment'}
-              </h3>
-              <button onClick={() => setShowRecordPaymentModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRecordPaymentSubmit} className="space-y-3 text-xs">
-              {/* REQUIREMENT 1 & 2: Remove Select Student for Student Role */}
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Student</label>
-                {isStudent ? (
-                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                    {studentProfile?.fullName} ({studentProfile?.studentCode})
-                  </div>
-                ) : (
-                  <select
-                    value={payStudentId}
-                    onChange={(e) => setPayStudentId(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                    required
-                  >
-                    {students.map((s) => (
-                      <option key={s.id} value={s.id}>{s.fullName} ({s.studentCode})</option>
                     ))}
-                  </select>
-                )}
-              </div>
+                    {ledger.data.fees.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-500">No fees billed to this student yet.</td></tr>}
+                  </tbody>
+                </table>
+              </Panel>
 
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Payment Amount ({settings.currencySymbol})
-                </label>
-                <input
-                  type="number"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Mode</label>
-                  <select
-                    value={payMode}
-                    onChange={(e) => setPayMode(e.target.value as any)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  >
-                    <option value="UPI">UPI / PhonePe / GPay</option>
-                    <option value="Net Banking">Net Banking</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Credit Card">Credit Card</option>
-                    <option value="Cheque">Cheque</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">UTR / Transaction ID</label>
-                  <input
-                    type="text"
-                    value={payUtr}
-                    onChange={(e) => setPayUtr(e.target.value)}
-                    placeholder="Enter UPI / NEFT Ref No."
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Remarks</label>
-                <input
-                  type="text"
-                  value={payRemarks}
-                  onChange={(e) => setPayRemarks(e.target.value)}
-                  placeholder="Optional remarks or installment details"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowRecordPaymentModal(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer"
-                >
-                  Submit Payment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Fee Adjustment Modal */}
-      {showAdjustmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Apply Fee Adjustment / Discount</h3>
-              <button onClick={() => setShowAdjustmentModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddAdjustmentSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Student</label>
-                {isStudent ? (
-                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700">
-                    {studentProfile?.fullName} ({studentProfile?.studentCode})
-                  </div>
-                ) : (
-                  <select
-                    value={adjStudentId}
-                    onChange={(e) => setAdjStudentId(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                    required
-                  >
-                    {students.map((s) => (
-                      <option key={s.id} value={s.id}>{s.fullName} ({s.studentCode})</option>
+              <Panel title="Payment history">
+                <table className="w-full min-w-[560px] text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
+                    <tr><th className="p-3">Date</th><th className="p-3">Amount</th><th className="p-3">Method</th><th className="p-3">Reference</th><th className="p-3">Status</th><th className="p-3" /></tr>
+                  </thead>
+                  <tbody>
+                    {ledger.data.payments.map((p) => (
+                      <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="p-3">{new Date(p.paid_at).toLocaleDateString('en-IN')}</td>
+                        <td className="p-3 font-bold">{money(Number(p.amount))}</td>
+                        <td className="p-3 uppercase">{p.method}</td>
+                        <td className="p-3">{p.reference_no || '—'}</td>
+                        <td className="p-3 uppercase">{p.status}</td>
+                        <td className="p-3 text-right">
+                          <button onClick={() => void removePayment(p.id)} className="text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </td>
+                      </tr>
                     ))}
-                  </select>
-                )}
-              </div>
+                    {ledger.data.payments.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-500">No payments recorded yet.</td></tr>}
+                  </tbody>
+                </table>
+              </Panel>
+            </>
+          )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Adjustment Type</label>
-                  <select
-                    value={adjType}
-                    onChange={(e) => setAdjType(e.target.value as any)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  >
-                    <option value="discount">Discount Coupon</option>
-                    <option value="scholarship">Scholarship Award</option>
-                    <option value="extra_charge">Extra Course Charge</option>
-                    <option value="late_fee">Late Fee Penalty</option>
-                  </select>
-                </div>
+          {ledger.error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{ledger.error}</p>}
+        </section>
+      </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount ({settings.currencySymbol})</label>
-                  <input
-                    type="number"
-                    value={adjAmount}
-                    onChange={(e) => setAdjAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="0"
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Reason / Note</label>
-                <input
-                  type="text"
-                  value={adjReason}
-                  onChange={(e) => setAdjReason(e.target.value)}
-                  placeholder="Reason for discount or adjustment"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAdjustmentModal(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold cursor-pointer"
-                >
-                  Apply Fee Adjustment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {showFee && studentId && (
+        <FeeDialog
+          studentId={studentId}
+          enrollments={enrollments.data ?? []}
+          onClose={() => setShowFee(false)}
+          onSaved={async () => { setShowFee(false); await refreshAll(); }}
+        />
       )}
-
-      {/* Salary Modal */}
-      {showSalaryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Record Faculty Salary Disbursal</h3>
-              <button onClick={() => setShowSalaryModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRecordSalarySubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Faculty / Staff Member</label>
-                <select
-                  value={salTeacherId}
-                  onChange={(e) => setSalTeacherId(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  required
-                >
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>{t.fullName} ({t.designation})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Month & Year</label>
-                  <input
-                    type="text"
-                    value={salMonth}
-                    onChange={(e) => setSalMonth(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Base Salary ({settings.currencySymbol})</label>
-                  <input
-                    type="number"
-                    value={salBase}
-                    onChange={(e) => setSalBase(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Bonus / Allowances ({settings.currencySymbol})</label>
-                  <input
-                    type="number"
-                    value={salBonus}
-                    onChange={(e) => setSalBonus(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-emerald-600 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Deductions ({settings.currencySymbol})</label>
-                  <input
-                    type="number"
-                    value={salDeductions}
-                    onChange={(e) => setSalDeductions(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-rose-600 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Payment Mode</label>
-                  <select
-                    value={salMode}
-                    onChange={(e) => setSalMode(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  >
-                    <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT)</option>
-                    <option value="UPI">UPI</option>
-                    <option value="Cheque">Cheque</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">NEFT / Ref UTR</label>
-                  <input
-                    type="text"
-                    value={salUtr}
-                    onChange={(e) => setSalUtr(e.target.value)}
-                    placeholder="Bank Ref No."
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Remarks</label>
-                <input
-                  type="text"
-                  value={salRemarks}
-                  onChange={(e) => setSalRemarks(e.target.value)}
-                  placeholder="Monthly payroll note"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowSalaryModal(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer"
-                >
-                  Disburse & Generate Payslip
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {showPayment && studentId && (
+        <PaymentDialog
+          studentId={studentId}
+          enrollments={enrollments.data ?? []}
+          onClose={() => setShowPayment(false)}
+          onSaved={async () => { setShowPayment(false); await refreshAll(); }}
+        />
       )}
-
-      {/* Verification Action Modal */}
-      {verificationModalPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Verify Payment Submission</h3>
-            <p className="text-xs text-slate-500">
-              Receipt No: <span className="font-mono font-bold text-blue-600">{verificationModalPayment.receiptNumber}</span> for student <strong className="text-slate-800 dark:text-slate-200">{verificationModalPayment.studentName}</strong>.
-            </p>
-
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs mb-1">Verification Remarks / Admin Notes</label>
-              <textarea
-                value={verifyRemarks}
-                onChange={(e) => setVerifyRemarks(e.target.value)}
-                rows={3}
-                className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2">
-              <button
-                onClick={() => setVerificationModalPayment(null)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleVerifyPayment('rejected')}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer"
-              >
-                Reject Receipt
-              </button>
-              <button
-                onClick={() => handleVerifyPayment('approved')}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer"
-              >
-                Approve Receipt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Payslip Print Modal */}
-      {selectedPayslip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl bg-white text-slate-900 rounded-2xl p-8 shadow-2xl space-y-6">
-            <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
-              <div>
-                <h2 className="text-2xl font-black text-slate-900">{settings.name}</h2>
-                <p className="text-xs text-slate-500">Faculty Salary Payment Advice & Payslip</p>
-              </div>
-              <button onClick={() => setSelectedPayslip(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div>
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Employee Name</p>
-                <p className="font-extrabold text-slate-900 text-sm mt-0.5">{selectedPayslip.teacherName}</p>
-              </div>
-              <div>
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Payroll Period</p>
-                <p className="font-extrabold text-slate-900 text-sm mt-0.5">{selectedPayslip.monthYear}</p>
-              </div>
-            </div>
-
-            <table className="w-full text-xs text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-900 text-white text-[10px] uppercase tracking-wider">
-                  <th className="p-2.5 rounded-l-lg">Component</th>
-                  <th className="p-2.5 text-right rounded-r-lg">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                <tr>
-                  <td className="p-2.5 font-semibold">Basic Salary</td>
-                  <td className="p-2.5 text-right font-mono">{settings.currencySymbol}{selectedPayslip.baseSalary.toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td className="p-2.5 font-semibold text-emerald-600">Performance Bonus & Allowances</td>
-                  <td className="p-2.5 text-right font-mono text-emerald-600">+{settings.currencySymbol}{selectedPayslip.bonus.toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td className="p-2.5 font-semibold text-rose-600">Deductions (TDS / Leave)</td>
-                  <td className="p-2.5 text-right font-mono text-rose-600">-{settings.currencySymbol}{selectedPayslip.deductions.toLocaleString()}</td>
-                </tr>
-                <tr className="bg-slate-100 font-bold text-sm">
-                  <td className="p-3 text-slate-900">Net Salary Disbursed</td>
-                  <td className="p-3 text-right font-mono text-indigo-600">{settings.currencySymbol}{selectedPayslip.netSalary.toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-200 text-xs">
-              <div>
-                <p className="text-slate-400 text-[10px]">Payment Mode: {selectedPayslip.paymentMode}</p>
-                <p className="text-slate-400 text-[10px] font-mono">Ref: {selectedPayslip.transactionId}</p>
-              </div>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center space-x-2 cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Payslip</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Receipt Modal */}
-      <ReceiptModal payment={selectedReceipt} onClose={() => setSelectedReceipt(null)} />
-      {showPayFeeModal && <PayFeeModal onClose={() => setShowPayFeeModal(false)} />}
-
     </div>
   );
 };
+
+type EnrollmentOption = { id: string; course_id: string; title: string };
+
+const FeeDialog: React.FC<{
+  studentId: string;
+  enrollments: EnrollmentOption[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}> = ({ studentId, enrollments, onClose, onSaved }) => {
+  const { notify } = useFeedback();
+  const [enrollmentId, setEnrollmentId] = useState(enrollments[0]?.id ?? '');
+  const [feeType, setFeeType] = useState('course');
+  const [amount, setAmount] = useState('');
+  const [tax, setTax] = useState('0');
+  const [discount, setDiscount] = useState('0');
+  const [dueDate, setDueDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return notify('error', 'Enter a valid amount');
+    setSaving(true);
+    try {
+      const enrollment = enrollments.find((en) => en.id === enrollmentId);
+      await feesApi.create({
+        student_id: studentId,
+        enrollment_id: enrollment?.id ?? null,
+        course_id: enrollment?.course_id ?? null,
+        fee_type: feeType,
+        amount: value,
+        tax_amount: Number(tax) || 0,
+        discount: Number(discount) || 0,
+        due_date: dueDate || null,
+      });
+      notify('success', 'Fee added to this student');
+      await onSaved();
+    } catch (err) {
+      notify('error', 'Could not add fee', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Add fee" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-3">
+        <Field label="Course / enrollment">
+          <select value={enrollmentId} onChange={(e) => setEnrollmentId(e.target.value)} className={inputCls}>
+            <option value="">No course (general fee)</option>
+            {enrollments.map((en) => <option key={en.id} value={en.id}>{en.title}</option>)}
+          </select>
+        </Field>
+        <Field label="Fee type">
+          <select value={feeType} onChange={(e) => setFeeType(e.target.value)} className={inputCls}>
+            <option value="course">Course fee</option>
+            <option value="registration">Registration</option>
+            <option value="exam">Exam</option>
+            <option value="material">Material</option>
+            <option value="other">Other</option>
+          </select>
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Amount"><input value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} inputMode="decimal" /></Field>
+          <Field label="Tax"><input value={tax} onChange={(e) => setTax(e.target.value)} className={inputCls} inputMode="decimal" /></Field>
+          <Field label="Discount"><input value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputCls} inputMode="decimal" /></Field>
+        </div>
+        <Field label="Due date"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} /></Field>
+        <button disabled={saving} className="w-full rounded-xl bg-slate-900 py-2.5 text-xs font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-900">
+          {saving ? 'Saving…' : 'Add fee'}
+        </button>
+      </form>
+    </Modal>
+  );
+};
+
+const PaymentDialog: React.FC<{
+  studentId: string;
+  enrollments: EnrollmentOption[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}> = ({ studentId, enrollments, onClose, onSaved }) => {
+  const { notify } = useFeedback();
+  const [enrollmentId, setEnrollmentId] = useState(enrollments[0]?.id ?? '');
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('cash');
+  const [reference, setReference] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return notify('error', 'Enter a valid amount');
+    setSaving(true);
+    try {
+      const enrollment = enrollments.find((en) => en.id === enrollmentId);
+      await paymentsApi.create({
+        student_id: studentId,
+        enrollment_id: enrollment?.id ?? null,
+        course_id: enrollment?.course_id ?? null,
+        amount: value,
+        method,
+        reference_no: reference.trim() || null,
+        status: 'verified',
+        paid_at: new Date().toISOString(),
+      });
+      notify('success', 'Payment recorded — pending balance updated');
+      await onSaved();
+    } catch (err) {
+      notify('error', 'Could not record payment', (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Record payment" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-3">
+        <Field label="Course / enrollment">
+          <select value={enrollmentId} onChange={(e) => setEnrollmentId(e.target.value)} className={inputCls}>
+            <option value="">No course (general)</option>
+            {enrollments.map((en) => <option key={en.id} value={en.id}>{en.title}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount"><input value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} inputMode="decimal" /></Field>
+          <Field label="Method">
+            <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputCls}>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="bank">Bank transfer</option>
+              <option value="card">Card</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Reference no."><input value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} /></Field>
+        <button disabled={saving} className="w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white disabled:opacity-60">
+          {saving ? 'Saving…' : 'Record payment'}
+        </button>
+      </form>
+    </Modal>
+  );
+};
+
+const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+    <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-slate-900">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-black"><ReceiptText className="h-4 w-4" /> {title}</h3>
+        <button onClick={onClose}><X className="h-4 w-4" /></button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const Panel: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <h3 className="p-3 text-xs font-black uppercase text-slate-500">{title}</h3>
+    {children}
+  </section>
+);
+
+const Stat: React.FC<{ label: string; value: string; tone?: string }> = ({ label, value, tone }) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+    <p className="text-[10px] font-bold uppercase text-slate-500">{label}</p>
+    <p className={`text-lg font-black ${tone ?? 'text-slate-900 dark:text-white'}`}>{value}</p>
+  </div>
+);
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div>
+    <label className="text-[11px] font-black uppercase text-slate-500">{label}</label>
+    <div className="mt-1">{children}</div>
+  </div>
+);
