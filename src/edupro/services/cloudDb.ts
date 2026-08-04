@@ -436,3 +436,129 @@ export const pendingPaymentsWithNames = async () => {
     course_title: (r.course_id && titleOf.get(r.course_id)) || '—',
   }));
 };
+
+/* ---------------- ROSTER (course -> enrolled students) ---------------- */
+export type RosterEntry = {
+  enrollment_id: string;
+  student_id: string;
+  full_name: string;
+  phone: string | null;
+  batch_name: string | null;
+  status: string;
+};
+
+/** Enrolled students of a single course, always keyed by student UUID. */
+export const courseRoster = async (courseId: string): Promise<RosterEntry[]> => {
+  const rows = await enrollmentsApi.listByCourse(courseId);
+  if (rows.length === 0) return [];
+  const ids = [...new Set(rows.map((r) => r.student_id))];
+  const { data: profiles } = await supabase.from('profiles').select('id, full_name, phone').in('id', ids);
+  const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
+  return rows.map((r) => ({
+    enrollment_id: r.id,
+    student_id: r.student_id,
+    full_name: byId.get(r.student_id)?.full_name ?? 'Unknown student',
+    phone: byId.get(r.student_id)?.phone ?? null,
+    batch_name: r.batch_name,
+    status: r.status,
+  }));
+};
+
+/* ---------------- REVENUE (staff) ---------------- */
+export type StudentLedgerRow = {
+  student_id: string;
+  full_name: string;
+  phone: string | null;
+  total: number;
+  paid: number;
+  outstanding: number;
+  status: 'PAID' | 'PARTIAL' | 'UNPAID';
+};
+
+export type RevenueSummary = {
+  totalBilled: number;
+  totalCollected: number;
+  totalPending: number;
+  studentCount: number;
+  perStudent: StudentLedgerRow[];
+  perCourse: { course_id: string; title: string; billed: number; collected: number }[];
+  monthly: { month: string; collected: number }[];
+};
+
+/**
+ * Whole-institute money position, computed from fees + verified payments.
+ * Every amount is attributed by student_id / course_id — never by name.
+ */
+export const revenueSummary = async (): Promise<RevenueSummary> => {
+  const [feesRes, paymentsRes, profilesRes, coursesRes] = await Promise.all([
+    supabase.from('fees').select('*'),
+    supabase.from('payments').select('*'),
+    supabase.from('profiles').select('id, full_name, phone').eq('role', 'student'),
+    supabase.from('courses').select('id, title'),
+  ]);
+  const fees = (feesRes.data ?? []) as CloudFee[];
+  const payments = ((paymentsRes.data ?? []) as CloudPayment[]).filter((p) => p.status === 'verified');
+  const profiles = (profilesRes.data ?? []) as { id: string; full_name: string; phone: string | null }[];
+  const courses = (coursesRes.data ?? []) as { id: string; title: string }[];
+
+  const billedBy = new Map<string, number>();
+  fees.forEach((f) => {
+    const value = Number(f.amount) + Number(f.tax_amount) - Number(f.discount);
+    billedBy.set(f.student_id, (billedBy.get(f.student_id) ?? 0) + value);
+  });
+  const paidBy = new Map<string, number>();
+  payments.forEach((p) => paidBy.set(p.student_id, (paidBy.get(p.student_id) ?? 0) + Number(p.amount)));
+
+  const perStudent: StudentLedgerRow[] = profiles
+    .map((p) => {
+      const total = billedBy.get(p.id) ?? 0;
+      const paid = paidBy.get(p.id) ?? 0;
+      const outstanding = Math.max(0, total - paid);
+      const status: StudentLedgerRow['status'] =
+        total > 0 && outstanding === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
+      return { student_id: p.id, full_name: p.full_name, phone: p.phone, total, paid, outstanding, status };
+    })
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  const titleOf = new Map(courses.map((c) => [c.id, c.title]));
+  const courseAgg = new Map<string, { billed: number; collected: number }>();
+  fees.forEach((f) => {
+    if (!f.course_id) return;
+    const cur = courseAgg.get(f.course_id) ?? { billed: 0, collected: 0 };
+    cur.billed += Number(f.amount) + Number(f.tax_amount) - Number(f.discount);
+    courseAgg.set(f.course_id, cur);
+  });
+  payments.forEach((p) => {
+    if (!p.course_id) return;
+    const cur = courseAgg.get(p.course_id) ?? { billed: 0, collected: 0 };
+    cur.collected += Number(p.amount);
+    courseAgg.set(p.course_id, cur);
+  });
+
+  const monthAgg = new Map<string, number>();
+  payments.forEach((p) => {
+    const key = new Date(p.paid_at).toISOString().slice(0, 7);
+    monthAgg.set(key, (monthAgg.get(key) ?? 0) + Number(p.amount));
+  });
+
+  return {
+    totalBilled: perStudent.reduce((s, r) => s + r.total, 0),
+    totalCollected: perStudent.reduce((s, r) => s + r.paid, 0),
+    totalPending: perStudent.reduce((s, r) => s + r.outstanding, 0),
+    studentCount: profiles.length,
+    perStudent,
+    perCourse: [...courseAgg.entries()].map(([id, v]) => ({
+      course_id: id,
+      title: titleOf.get(id) ?? 'Unknown course',
+      billed: v.billed,
+      collected: v.collected,
+    })),
+    monthly: [...monthAgg.entries()].sort().map(([month, collected]) => ({ month, collected })),
+  };
+};
+
+/** Enrollments of one student with course titles — used by the fee editor. */
+export const studentEnrollments = async (studentId: string) => {
+  const rows = await enrollmentsApi.listByStudent(studentId);
+  return rows.map((r) => ({ id: r.id, course_id: r.course_id, title: r.courses?.title ?? 'Course' }));
+};
