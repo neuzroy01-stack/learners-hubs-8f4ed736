@@ -562,3 +562,190 @@ export const studentEnrollments = async (studentId: string) => {
   const rows = await enrollmentsApi.listByStudent(studentId);
   return rows.map((r) => ({ id: r.id, course_id: r.course_id, title: r.courses?.title ?? 'Course' }));
 };
+
+/* ---------------- PAYMENT PROOFS (private storage) ---------------- */
+export const paymentProofs = {
+  /** Uploads a screenshot into the student's own folder and returns the storage path. */
+  async upload(studentId: string, file: File) {
+    const safe = file.name.replace(/[^\w.\-]/g, '_');
+    const path = `${studentId}/${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from('payment-proofs').upload(path, file, { upsert: false });
+    if (error) throw new Error(error.message);
+    return path;
+  },
+  /** Short-lived signed URL — the bucket is private. */
+  async signedUrl(path: string) {
+    const { data } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 3600);
+    return data?.signedUrl ?? null;
+  },
+};
+
+/**
+ * Student-initiated UPI payment request.
+ * Always lands as `pending` — the outstanding balance is untouched until an
+ * admin verifies it (paid totals only ever count `verified` payments).
+ */
+export const submitPaymentRequest = async (input: {
+  studentId: string;
+  enrollmentId?: string | null;
+  courseId?: string | null;
+  amount: number;
+  utr: string;
+  note?: string | null;
+  proofPath?: string | null;
+}) => {
+  const row = unwrap(
+    await supabase
+      .from('payments')
+      .insert({
+        student_id: input.studentId,
+        enrollment_id: input.enrollmentId ?? null,
+        course_id: input.courseId ?? null,
+        amount: input.amount,
+        method: 'upi',
+        reference_no: input.utr,
+        receipt_url: input.proofPath ?? null,
+        notes: input.note ?? null,
+        status: 'pending',
+        paid_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+  ) as CloudPayment;
+  return row;
+};
+
+/** Approve / reject a payment request, with a reason the student can read back. */
+export const reviewPayment = async (
+  payment: CloudPayment,
+  decision: 'verified' | 'rejected',
+  reason?: string
+) => {
+  const uid = await currentUserId();
+  const row = unwrap(
+    await supabase
+      .from('payments')
+      .update({
+        status: decision,
+        notes: reason?.trim() ? reason.trim() : payment.notes,
+        verified_by: uid,
+        verified_at: new Date().toISOString(),
+      })
+      .eq('id', payment.id)
+      .select()
+      .single()
+  ) as CloudPayment;
+  if (row.enrollment_id) await recalcEnrollmentPaid(row.enrollment_id);
+  await notificationsApi
+    .send([
+      {
+        user_id: payment.student_id,
+        course_id: payment.course_id,
+        type: 'payment',
+        title: decision === 'verified' ? 'Payment approved' : 'Payment rejected',
+        body:
+          decision === 'verified'
+            ? `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} has been verified and applied to your fees.`
+            : `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} was rejected. ${reason?.trim() || 'Please submit a new request.'}`,
+      },
+    ])
+    .catch(() => undefined);
+  await logAudit('REVIEW', 'payment', payment.id, { status: payment.status }, { status: decision, reason });
+  return row;
+};
+
+/* ---------------- STUDENT OVERVIEW (dashboard) ---------------- */
+export type CourseProgress = {
+  course: CloudCourse;
+  enrollment_id: string;
+  completed: number;
+  total: number;
+  percent: number;
+};
+
+export type StudentOverview = {
+  courses: CourseProgress[];
+  overallProgress: number;
+  attendance: { present: number; total: number; percent: number };
+  finance: StudentFinance;
+  upcomingLive: CloudLiveClass[];
+};
+
+/**
+ * Everything the student dashboard shows, derived only from database rows.
+ * Progress counts real completed activities (graded/submitted assignments and
+ * attended sessions) against everything scheduled for that course.
+ */
+export const studentOverview = async (studentId: string): Promise<StudentOverview> => {
+  const enrollments = await enrollmentsApi.listByStudent(studentId);
+  const active = enrollments.filter((e) => e.status === 'active' && e.courses);
+  const courseIds = active.map((e) => e.course_id);
+
+  const [assignments, submissions, attendance, finance, live] = await Promise.all([
+    courseIds.length
+      ? (unwrap(
+          await supabase.from('assignments').select('id, course_id').in('course_id', courseIds).eq('is_published', true)
+        ) as { id: string; course_id: string }[])
+      : Promise.resolve([] as { id: string; course_id: string }[]),
+    submissionsApi.listByStudent(studentId),
+    attendanceApi.listByStudent(studentId),
+    studentFinance(studentId),
+    courseIds.length
+      ? (unwrap(
+          await supabase
+            .from('live_classes')
+            .select('*')
+            .in('course_id', courseIds)
+            .eq('is_published', true)
+            .gte('starts_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+            .order('starts_at', { ascending: true })
+            .limit(5)
+        ) as CloudLiveClass[])
+      : Promise.resolve([] as CloudLiveClass[]),
+  ]);
+
+  const submittedIds = new Set(submissions.map((s) => s.assignment_id));
+
+  const courses: CourseProgress[] = active.map((e) => {
+    const courseAssignments = assignments.filter((a) => a.course_id === e.course_id);
+    const courseAttendance = attendance.filter((a) => a.course_id === e.course_id);
+    const completed =
+      courseAssignments.filter((a) => submittedIds.has(a.id)).length +
+      courseAttendance.filter((a) => a.status === 'present').length;
+    const total = courseAssignments.length + courseAttendance.length;
+    return {
+      course: e.courses as CloudCourse,
+      enrollment_id: e.id,
+      completed,
+      total,
+      percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    };
+  });
+
+  const totalItems = courses.reduce((s, c) => s + c.total, 0);
+  const doneItems = courses.reduce((s, c) => s + c.completed, 0);
+  const present = attendance.filter((a) => a.status === 'present').length;
+
+  return {
+    courses,
+    overallProgress: totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0,
+    attendance: {
+      present,
+      total: attendance.length,
+      percent: attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0,
+    },
+    finance,
+    upcomingLive: live,
+  };
+};
+
+/** Published catalogue for the public landing page (anon-readable). */
+export const publicCourses = async () => {
+  const { data, error } = await supabase
+    .from('courses')
+    .select('*')
+    .eq('is_published', true)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CloudCourse[];
+};
