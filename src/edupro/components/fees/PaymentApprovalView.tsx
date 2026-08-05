@@ -39,11 +39,12 @@ export const PaymentApprovalView: React.FC = () => {
       message: 'The fee stays pending and the student can resubmit. Add a reason they will see.',
       confirmLabel: 'Reject',
       tone: 'danger',
-      prompt: { label: 'Reason', placeholder: 'e.g. UTR not found in bank statement' },
+      requireReason: true,
+      reasonLabel: 'Reason shown to the student',
     });
     if (!res.ok) return;
     try {
-      await reviewPayment(row, 'rejected', res.value);
+      await reviewPayment(row, 'rejected', res.reason);
       notify('success', 'Payment rejected', 'The student has been notified with your reason.');
       await reload();
     } catch (err) {
