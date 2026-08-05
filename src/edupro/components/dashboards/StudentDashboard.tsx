@@ -30,7 +30,7 @@ const attendanceTone = (p: number) =>
  * progress, attendance and pending fees are computed, never hardcoded.
  */
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigateTab }) => {
-  const { currentUser, profile } = useAuth();
+  const { currentUser } = useAuth();
   const uid = currentUser?.id ?? '';
   const [payOpen, setPayOpen] = useState(false);
 
@@ -51,7 +51,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigateTa
       <div className="flex flex-col justify-between gap-4 rounded-2xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-6 text-white shadow-xl md:flex-row md:items-center">
         <div>
           <h1 className="text-2xl font-black tracking-tight">
-            Welcome back, {profile?.full_name ?? currentUser?.email ?? 'Student'}!
+            Welcome back, {currentUser?.name ?? currentUser?.email ?? 'Student'}!
           </h1>
           <p className="mt-1 text-xs text-blue-200">
             {overview?.courses.length
