@@ -77,7 +77,7 @@ export const SuperAdminDashboard: React.FC = () => {
             {(data?.revenue.perStudent ?? []).map((s) => (
               <tr key={s.student_id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="p-3 font-bold">{s.full_name}</td>
-                <td className="p-3">{money(s.billed)}</td>
+                <td className="p-3">{money(s.total)}</td>
                 <td className="p-3 text-emerald-600">{money(s.paid)}</td>
                 <td className="p-3 text-rose-600">{money(s.outstanding)}</td>
                 <td className="p-3 uppercase">{s.status}</td>
