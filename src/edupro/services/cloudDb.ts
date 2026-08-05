@@ -749,3 +749,65 @@ export const publicCourses = async () => {
   if (error) throw new Error(error.message);
   return (data ?? []) as CloudCourse[];
 };
+
+/* ---------------- STAFF OVERVIEW (admin / teacher dashboards) ---------------- */
+export type StaffOverview = {
+  students: number;
+  teachers: number;
+  admins: number;
+  courses: number;
+  publishedCourses: number;
+  activeEnrollments: number;
+  revenue: RevenueSummary;
+  pendingPayments: number;
+  upcomingLive: CloudLiveClass[];
+  pendingSubmissions: number;
+};
+
+const countOf = async (table: 'profiles' | 'enrollments' | 'courses' | 'payments', apply: (q: any) => any) => {
+  const q = apply(supabase.from(table).select('id', { count: 'exact', head: true }));
+  const { count, error } = await q;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+};
+
+/** Live institute metrics for staff dashboards — no cached or demo numbers. */
+export const staffOverview = async (): Promise<StaffOverview> => {
+  const [students, teachers, admins, courses, publishedCourses, activeEnrollments, revenue, pendingPayments] =
+    await Promise.all([
+      countOf('profiles', (q) => q.eq('role', 'student')),
+      countOf('profiles', (q) => q.eq('role', 'teacher')),
+      countOf('profiles', (q) => q.in('role', ['admin', 'super_admin'])),
+      countOf('courses', (q) => q),
+      countOf('courses', (q) => q.eq('is_published', true)),
+      countOf('enrollments', (q) => q.eq('status', 'active')),
+      revenueSummary(),
+      countOf('payments', (q) => q.eq('status', 'pending')),
+    ]);
+
+  const upcomingLive = unwrap(
+    await supabase
+      .from('live_classes')
+      .select('*')
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: true })
+      .limit(5)
+  ) as CloudLiveClass[];
+
+  const pendingSubmissions = unwrap(
+    await supabase.from('assignment_submissions').select('id').eq('status', 'submitted')
+  ) as { id: string }[];
+
+  return {
+    students,
+    teachers,
+    admins,
+    courses,
+    publishedCourses,
+    activeEnrollments,
+    revenue,
+    pendingPayments,
+    upcomingLive,
+    pendingSubmissions: pendingSubmissions.length,
+  };
+};
