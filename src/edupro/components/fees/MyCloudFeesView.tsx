@@ -1,5 +1,6 @@
-import React from 'react';
-import { CreditCard, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { CreditCard, RefreshCw, IndianRupee } from 'lucide-react';
+import { PayFeeModal } from './PayFeeModal';
 import { studentFinance } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useAuth } from '../../context/AuthContext';
@@ -11,6 +12,9 @@ export const MyCloudFeesView: React.FC = () => {
   const { currentUser } = useAuth();
   const uid = currentUser?.id ?? '';
   const { data, loading, error, reload } = useCloudQuery(async () => (uid ? studentFinance(uid) : null), [uid]);
+  const [payOpen, setPayOpen] = useState(false);
+  const outstanding = data?.outstanding ?? 0;
+  const lastRejected = (data?.payments ?? []).find((p) => p.status === 'rejected');
 
   if (!uid) return <p className="p-6 text-sm text-slate-500">Sign in to view your fees.</p>;
 
@@ -20,6 +24,11 @@ export const MyCloudFeesView: React.FC = () => {
         <h1 className="flex items-center gap-2 text-xl font-black text-slate-900 dark:text-white">
           <CreditCard className="h-5 w-5 text-blue-600" /> My Fees
         </h1>
+        {outstanding > 0 && (
+          <button onClick={() => setPayOpen(true)} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">
+            <IndianRupee className="h-3.5 w-3.5" /> Pay Now
+          </button>
+        )}
         <button onClick={() => void reload()} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
@@ -35,6 +44,14 @@ export const MyCloudFeesView: React.FC = () => {
             <Card label="Outstanding" value={money(data.outstanding)} tone="text-rose-600" />
             <Card label="Payment Status" value={data.status} tone="text-blue-600" />
           </div>
+
+          {lastRejected && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs dark:border-amber-900 dark:bg-amber-950/40">
+              <p className="font-black text-amber-800 dark:text-amber-300">A payment was rejected</p>
+              <p className="mt-1 text-amber-700 dark:text-amber-200">{lastRejected.notes || 'Please submit a new request with a valid UTR.'}</p>
+              <button onClick={() => setPayOpen(true)} className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 font-bold text-white">Resubmit payment</button>
+            </div>
+          )}
 
           <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             <h2 className="p-3 text-xs font-black uppercase text-slate-500">Fee breakdown</h2>
@@ -61,7 +78,7 @@ export const MyCloudFeesView: React.FC = () => {
             <h2 className="p-3 text-xs font-black uppercase text-slate-500">Payment history</h2>
             <table className="w-full min-w-[560px] text-left text-xs">
               <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800">
-                <tr><th className="p-3">Date</th><th className="p-3">Amount</th><th className="p-3">Method</th><th className="p-3">Reference</th><th className="p-3">Status</th></tr>
+                <tr><th className="p-3">Date</th><th className="p-3">Amount</th><th className="p-3">Method</th><th className="p-3">Reference</th><th className="p-3">Status</th><th className="p-3">Remarks</th></tr>
               </thead>
               <tbody>
                 {data.payments.map((p) => (
@@ -70,14 +87,19 @@ export const MyCloudFeesView: React.FC = () => {
                     <td className="p-3 font-bold">{money(Number(p.amount))}</td>
                     <td className="p-3 uppercase">{p.method}</td>
                     <td className="p-3">{p.reference_no || '—'}</td>
-                    <td className="p-3 uppercase">{p.status}</td>
+                    <td className="p-3 uppercase">{p.status === 'pending' ? 'Pending review' : p.status}</td>
+                    <td className="p-3 text-slate-500">{p.notes || '—'}</td>
                   </tr>
                 ))}
-                {data.payments.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-slate-500">No payments recorded yet.</td></tr>}
+                {data.payments.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-500">No payments recorded yet.</td></tr>}
               </tbody>
             </table>
           </section>
         </>
+      )}
+
+      {payOpen && (
+        <PayFeeModal outstanding={outstanding} onClose={() => setPayOpen(false)} onSubmitted={reload} />
       )}
     </div>
   );
