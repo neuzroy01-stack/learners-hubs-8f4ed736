@@ -29,10 +29,17 @@ export const Route = createFileRoute("/")({
 
 function LandingPage() {
   const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const [courses, setCourses] = useState<PublicCourseCard[]>([]);
+
+  useEffect(() => {
+    setHydrated(true);
+    getPublicCourses()
+      .then(setCourses)
+      .catch(() => setCourses([]));
+  }, []);
+
   if (!hydrated) return null;
 
-  const courses = getPublicCourses();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
