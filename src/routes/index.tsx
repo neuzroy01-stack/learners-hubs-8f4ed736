@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { PublicNav } from "../edupro/components/public/PublicNav";
 import { HeroSlider } from "../edupro/components/public/HeroSlider";
 import { CoursesGrid } from "../edupro/components/public/CoursesGrid";
-import { getPublicCourses } from "../edupro/components/public/publicCourseData";
+import { getPublicCourses, type PublicCourseCard } from "../edupro/components/public/publicCourseData";
 
 export const Route = createFileRoute("/")({
   head: () => ({
