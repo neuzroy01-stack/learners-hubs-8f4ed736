@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Phone, Lock, ShieldCheck, ArrowRight } from "lucide-react";
-import { findStudentByPhone, validatePassword, persistSession } from "../edupro/services/authService";
+
 import { signIn } from "../lib/accounts.functions";
 import { completeCloudSignIn } from "../edupro/services/cloudAuth";
 
