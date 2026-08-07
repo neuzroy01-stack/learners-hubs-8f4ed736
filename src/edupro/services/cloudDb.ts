@@ -811,3 +811,186 @@ export const staffOverview = async (): Promise<StaffOverview> => {
     pendingSubmissions: pendingSubmissions.length,
   };
 };
+
+/* ---------------- LECTURE PROGRESS ---------------- */
+export type CloudLectureProgress = Tables['lecture_progress']['Row'];
+
+export const lectureProgressApi = {
+  /** All progress rows of one student inside one course. */
+  async listForCourse(studentId: string, courseId: string) {
+    return unwrap(
+      await supabase
+        .from('lecture_progress')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('course_id', courseId)
+    ) as CloudLectureProgress[];
+  },
+
+  /** Marks a lecture watched / unwatched for the signed-in student. */
+  async setCompleted(courseId: string, lectureId: string, completed: boolean) {
+    const uid = await currentUserId();
+    if (!uid) throw new Error('Please sign in again.');
+    const { error } = await supabase.from('lecture_progress').upsert(
+      {
+        student_id: uid,
+        course_id: courseId,
+        lecture_id: lectureId,
+        completed,
+        percent: completed ? 100 : 0,
+      },
+      { onConflict: 'student_id,lecture_id' }
+    );
+    if (error) throw new Error(error.message);
+  },
+};
+
+export type CourseProgress = { total: number; completed: number; percent: number };
+
+/**
+ * Progress = completed recorded lectures / total published lectures.
+ * Returns null when the course has no lectures, so the UI can hide the widget
+ * instead of showing a meaningless 0%.
+ */
+export const courseProgress = async (
+  studentId: string,
+  courseId: string
+): Promise<CourseProgress | null> => {
+  const [lectures, progress] = await Promise.all([
+    unwrap(
+      await supabase
+        .from('recorded_lectures')
+        .select('id')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+    ) as Promise<{ id: string }[]> | { id: string }[],
+    lectureProgressApi.listForCourse(studentId, courseId),
+  ]);
+  const ids = new Set((lectures as { id: string }[]).map((l) => l.id));
+  if (ids.size === 0) return null;
+  const completed = progress.filter((p) => p.completed && ids.has(p.lecture_id)).length;
+  return { total: ids.size, completed, percent: Math.round((completed / ids.size) * 100) };
+};
+
+/* ---------------- QUIZZES / ONLINE EXAMS ---------------- */
+export type CloudQuiz = Tables['quizzes']['Row'];
+export type CloudQuizQuestion = Tables['quiz_questions']['Row'];
+export type CloudQuizAttempt = Tables['quiz_attempts']['Row'];
+/** Question as delivered to a student — the answer key is never included. */
+export type QuizPaperQuestion = {
+  id: string;
+  prompt: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  marks: number;
+  sort_order: number;
+};
+
+export const quizzesApi = {
+  async listByCourse(courseId: string) {
+    return unwrap(
+      await supabase
+        .from('quizzes')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('week_number', { ascending: true })
+        .order('created_at', { ascending: false })
+    ) as CloudQuiz[];
+  },
+
+  async create(payload: Tables['quizzes']['Insert']) {
+    const row = unwrap(await supabase.from('quizzes').insert(payload).select().single()) as CloudQuiz;
+    await logAudit('quiz.create', 'quizzes', row.id, null, payload);
+    return row;
+  },
+
+  async update(id: string, payload: Tables['quizzes']['Update']) {
+    const row = unwrap(await supabase.from('quizzes').update(payload).eq('id', id).select().single()) as CloudQuiz;
+    await logAudit('quiz.update', 'quizzes', id, null, payload);
+    return row;
+  },
+
+  async remove(id: string) {
+    const { error } = await supabase.from('quizzes').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    await logAudit('quiz.delete', 'quizzes', id);
+  },
+
+  /* --- questions (staff only; RLS hides the answer key from students) --- */
+  async questions(quizId: string) {
+    return unwrap(
+      await supabase.from('quiz_questions').select('*').eq('quiz_id', quizId).order('sort_order')
+    ) as CloudQuizQuestion[];
+  },
+
+  async saveQuestion(payload: Tables['quiz_questions']['Insert'] & { id?: string }) {
+    const { id, ...rest } = payload;
+    if (id) {
+      return unwrap(
+        await supabase.from('quiz_questions').update(rest).eq('id', id).select().single()
+      ) as CloudQuizQuestion;
+    }
+    return unwrap(
+      await supabase.from('quiz_questions').insert(rest).select().single()
+    ) as CloudQuizQuestion;
+  },
+
+  async removeQuestion(id: string) {
+    const { error } = await supabase.from('quiz_questions').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+
+  /* --- student attempt flow: every rule is enforced in the database --- */
+  async paper(quizId: string) {
+    const { data, error } = await supabase.rpc('quiz_paper', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as QuizPaperQuestion[];
+  },
+
+  async startAttempt(quizId: string) {
+    const { data, error } = await supabase.rpc('start_quiz_attempt', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+
+  async saveAnswers(attemptId: string, answers: Record<string, string>) {
+    const { error } = await supabase.rpc('save_quiz_answers', {
+      _attempt_id: attemptId,
+      _answers: answers as never,
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  async submitAttempt(attemptId: string, answers: Record<string, string>) {
+    const { data, error } = await supabase.rpc('submit_quiz_attempt', {
+      _attempt_id: attemptId,
+      _answers: answers as never,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+
+  async myAttempts(quizId: string, studentId: string) {
+    return unwrap(
+      await supabase
+        .from('quiz_attempts')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .eq('student_id', studentId)
+        .order('attempt_no', { ascending: false })
+    ) as CloudQuizAttempt[];
+  },
+
+  /** Staff view of everyone's attempts for one quiz. */
+  async attemptsForQuiz(quizId: string) {
+    return unwrap(
+      await supabase
+        .from('quiz_attempts')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .order('submitted_at', { ascending: false })
+    ) as CloudQuizAttempt[];
+  },
+};
