@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Video, Plus, Pencil, Trash2, RefreshCw, X, Youtube, TriangleAlert as AlertTriangle } from 'lucide-react';
-import { lecturesApi, type CloudLecture } from '../../services/cloudDb';
+import { lecturesApi, lectureProgressApi, type CloudLecture, type CloudLectureProgress } from '../../services/cloudDb';
+import { useAuth } from '../../context/AuthContext';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
@@ -72,6 +73,8 @@ const emptyForm = (week: number): FormState => ({
 export const RecordedLecturesView: React.FC = () => {
   const { notify, confirm } = useFeedback();
   const { courses, canManage, loading: coursesLoading } = useCourseScope();
+  const { currentUser } = useAuth();
+  const uid = currentUser?.id ?? '';
 
   const [courseId, setCourseId] = useState('');
   const activeCourseId = courseId || courses[0]?.id || '';
@@ -81,6 +84,29 @@ export const RecordedLecturesView: React.FC = () => {
     [activeCourseId],
   );
   const lectures = useMemo(() => (data ?? []) as CloudLecture[], [data]);
+
+  // Course progress = completed recorded lectures / published lectures.
+  const progressQuery = useCloudQuery(
+    async () => (uid && activeCourseId && !canManage ? lectureProgressApi.listForCourse(uid, activeCourseId) : []),
+    [uid, activeCourseId, canManage],
+  );
+  const doneIds = useMemo(
+    () => new Set(((progressQuery.data ?? []) as CloudLectureProgress[]).filter((p) => p.completed).map((p) => p.lecture_id)),
+    [progressQuery.data],
+  );
+  const published = useMemo(() => lectures.filter((l) => l.is_published), [lectures]);
+  const completedCount = published.filter((l) => doneIds.has(l.id)).length;
+  const progressPercent = published.length ? Math.round((completedCount / published.length) * 100) : 0;
+
+  const toggleComplete = async (lectureId: string, next: boolean) => {
+    try {
+      await lectureProgressApi.setCompleted(activeCourseId, lectureId, next);
+      await progressQuery.reload();
+      notify('success', next ? 'Marked as completed' : 'Marked as not completed');
+    } catch (err) {
+      notify('error', 'Could not update progress', (err as Error).message);
+    }
+  };
 
   const weeks = useMemo(() => {
     const set = new Set<number>(lectures.map((l) => l.week_number ?? 1));
@@ -194,6 +220,18 @@ export const RecordedLecturesView: React.FC = () => {
         </select>
       </div>
 
+      {!canManage && published.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between text-xs font-bold">
+            <span>Course progress</span>
+            <span className="text-indigo-600">{completedCount}/{published.length} • {progressPercent}%</span>
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+            <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${progressPercent}%` }} />
+          </div>
+        </div>
+      )}
+
       {error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
 
       {weeks.length > 0 && (
@@ -239,6 +277,14 @@ export const RecordedLecturesView: React.FC = () => {
               <div className="p-5">
                 <h3 className="text-base font-black text-slate-900 dark:text-white">{selected.title}</h3>
                 {selected.description && <p className="mt-1 text-xs text-slate-500">{selected.description}</p>}
+                {!canManage && (
+                  <button
+                    onClick={() => void toggleComplete(selected.id, !doneIds.has(selected.id))}
+                    className={`mt-4 rounded-xl px-4 py-2 text-[11px] font-bold ${doneIds.has(selected.id) ? 'bg-emerald-600 text-white' : 'border border-slate-300 dark:border-slate-700'}`}
+                  >
+                    {doneIds.has(selected.id) ? '✓ Completed' : 'Mark as completed'}
+                  </button>
+                )}
                 {canManage && (
                   <div className="mt-4 flex gap-2">
                     <button onClick={() => openEdit(selected)} className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-2 text-[11px] font-bold dark:border-slate-700">
