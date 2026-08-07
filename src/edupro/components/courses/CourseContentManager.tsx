@@ -42,7 +42,7 @@ const inputCls =
   'w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
 const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1';
 
-const toLocalInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
+const toLocalInput = (iso?: string | null) => toAppInput(iso);
 
 export const CourseContentManager: React.FC = () => {
   const { currentRole } = useAuth();
@@ -383,7 +383,7 @@ const EditorModal: React.FC<{
                 </div>
                 <div>
                   <label className={labelCls}>Ends at</label>
-                  <input type="datetime-local" className={inputCls} value={toLocalInput(str('ends_at'))} onChange={(e) => set('ends_at', e.target.value ? new Date(e.target.value).toISOString() : null)} />
+                  <input type="datetime-local" step={60} className={inputCls} value={toLocalInput(str('ends_at'))} onChange={(e) => set('ends_at', e.target.value ? appInputToIso(e.target.value) : null)} />
                 </div>
               </div>
             </>
@@ -453,7 +453,7 @@ const EditorModal: React.FC<{
                 </div>
                 <div>
                   <label className={labelCls}>Due date</label>
-                  <input type="datetime-local" className={inputCls} value={toLocalInput(str('due_at'))} onChange={(e) => set('due_at', e.target.value ? new Date(e.target.value).toISOString() : null)} />
+                  <input type="datetime-local" step={60} className={inputCls} value={toLocalInput(str('due_at'))} onChange={(e) => set('due_at', e.target.value ? appInputToIso(e.target.value) : null)} />
                 </div>
               </div>
             </>
