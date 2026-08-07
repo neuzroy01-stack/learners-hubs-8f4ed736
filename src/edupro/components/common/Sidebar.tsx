@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'financials', label: 'Fee Revenue', icon: CreditCard },
           { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },
           { id: 'salary', label: 'Staff Salaries', icon: DollarSign },
+          { id: 'quizzes', label: 'Quizzes & Exams', icon: Award },
           { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
           { id: 'policies', label: 'Policies & Consent', icon: FileText },
           { id: 'audit_logs', label: 'Audit Trail Logs', icon: Shield },
@@ -66,6 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },
           { id: 'attendance', label: 'Attendance Matrix', icon: FileSpreadsheet },
           { id: 'academics', label: 'Assignments & Quizzes', icon: Award },
+          { id: 'quizzes', label: 'Online Exams', icon: Award },
           { id: 'reports', label: 'Reports Generator', icon: BarChart3 },
           { id: 'settings', label: 'Institute Config', icon: Settings }
         ];
