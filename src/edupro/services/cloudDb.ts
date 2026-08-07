@@ -681,14 +681,30 @@ export const studentOverview = async (studentId: string): Promise<StudentOvervie
   const active = enrollments.filter((e) => e.status === 'active' && e.courses);
   const courseIds = active.map((e) => e.course_id);
 
-  const [assignments, submissions, attendance, finance, live] = await Promise.all([
+  const [lectures, watched, attendance] = await Promise.all([
     courseIds.length
       ? (unwrap(
-          await supabase.from('assignments').select('id, course_id').in('course_id', courseIds).eq('is_published', true)
+          await supabase
+            .from('recorded_lectures')
+            .select('id, course_id')
+            .in('course_id', courseIds)
+            .eq('is_published', true)
         ) as { id: string; course_id: string }[])
       : Promise.resolve([] as { id: string; course_id: string }[]),
-    submissionsApi.listByStudent(studentId),
+    courseIds.length
+      ? (unwrap(
+          await supabase
+            .from('lecture_progress')
+            .select('lecture_id, course_id, completed')
+            .eq('student_id', studentId)
+            .in('course_id', courseIds)
+        ) as { lecture_id: string; course_id: string; completed: boolean }[])
+      : Promise.resolve([] as { lecture_id: string; course_id: string; completed: boolean }[]),
     attendanceApi.listByStudent(studentId),
+  ]);
+
+  const [finance, live] = await Promise.all([
+
     studentFinance(studentId),
     courseIds.length
       ? (unwrap(
