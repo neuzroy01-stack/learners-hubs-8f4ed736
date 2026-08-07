@@ -860,17 +860,17 @@ export const lectureProgressApi = {
   },
 };
 
-export type CourseProgress = { total: number; completed: number; percent: number };
+export type LectureProgressSummary = { total: number; completed: number; percent: number };
 
 /**
  * Progress = completed recorded lectures / total published lectures.
  * Returns null when the course has no lectures, so the UI can hide the widget
  * instead of showing a meaningless 0%.
  */
-export const courseProgress = async (
+export const courseLectureProgress = async (
   studentId: string,
   courseId: string
-): Promise<CourseProgress | null> => {
+): Promise<LectureProgressSummary | null> => {
   const [lectures, progress] = await Promise.all([
     unwrap(
       await supabase
@@ -878,14 +878,15 @@ export const courseProgress = async (
         .select('id')
         .eq('course_id', courseId)
         .eq('is_published', true)
-    ) as Promise<{ id: string }[]> | { id: string }[],
+    ) as { id: string }[],
     lectureProgressApi.listForCourse(studentId, courseId),
   ]);
-  const ids = new Set((lectures as { id: string }[]).map((l) => l.id));
+  const ids = new Set(lectures.map((l) => l.id));
   if (ids.size === 0) return null;
   const completed = progress.filter((p) => p.completed && ids.has(p.lecture_id)).length;
   return { total: ids.size, completed, percent: Math.round((completed / ids.size) * 100) };
 };
+
 
 /* ---------------- QUIZZES / ONLINE EXAMS ---------------- */
 export type CloudQuiz = Tables['quizzes']['Row'];
