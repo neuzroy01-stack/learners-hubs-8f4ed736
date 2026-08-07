@@ -1,3 +1,4 @@
+import { formatAppDateTime } from '../../lib/datetime';
 import React from 'react';
 import {
   Users,
@@ -56,7 +57,7 @@ export const SuperAdminDashboard: React.FC = () => {
           {(data?.upcomingLive ?? []).map((l) => (
             <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
               <span className="font-bold text-slate-900 dark:text-white">{l.title}</span>
-              <span className="text-slate-500">{new Date(l.starts_at).toLocaleString('en-IN')}</span>
+              <span className="text-slate-500">{formatAppDateTime(l.starts_at)}</span>
             </li>
           ))}
           {(data?.upcomingLive ?? []).length === 0 && !loading && (
