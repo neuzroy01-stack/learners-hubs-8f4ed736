@@ -1,3 +1,4 @@
+import { formatAppDateTime, toAppInput, appInputToIso } from '../../lib/datetime';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
@@ -241,7 +242,7 @@ export const CourseContentManager: React.FC = () => {
                   <Row
                     key={row.id}
                     title={row.title}
-                    subtitle={`${new Date(row.starts_at).toLocaleString()} · ${row.platform}`}
+                    subtitle={`${formatAppDateTime(row.starts_at)} · ${row.platform}`}
                     meta={row.meeting_url || undefined}
                     onEdit={() => setEditing(row as unknown as Record<string, unknown>)}
                     onDelete={() => handleDelete('live', row.id, row.title)}
@@ -378,7 +379,7 @@ const EditorModal: React.FC<{
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelCls}>Starts at</label>
-                  <input required type="datetime-local" className={inputCls} value={toLocalInput(str('starts_at'))} onChange={(e) => set('starts_at', new Date(e.target.value).toISOString())} />
+                  <input required type="datetime-local" className={inputCls} step={60} value={toAppInput(str('starts_at'))} onChange={(e) => set('starts_at', appInputToIso(e.target.value))} />
                 </div>
                 <div>
                   <label className={labelCls}>Ends at</label>

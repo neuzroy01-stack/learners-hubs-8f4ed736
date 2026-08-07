@@ -1,3 +1,4 @@
+import { formatAppDateTime } from '../../lib/datetime';
 import React, { useState } from 'react';
 import {
   GraduationCap,
@@ -196,7 +197,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onNavigateTa
             <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-800">
               <div>
                 <p className="font-bold text-slate-900 dark:text-white">{l.title}</p>
-                <p className="text-[11px] text-slate-500">{new Date(l.starts_at).toLocaleString('en-IN')}</p>
+                <p className="text-[11px] text-slate-500">{formatAppDateTime(l.starts_at)}</p>
               </div>
               {l.meeting_url && (
                 <a href={l.meeting_url} target="_blank" rel="noreferrer" className="rounded-lg bg-purple-600 px-3 py-1.5 font-bold text-white">
