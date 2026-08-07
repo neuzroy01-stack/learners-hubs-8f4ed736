@@ -52,18 +52,10 @@ function StudentLoginPage() {
         navigate({ to: "/app" });
         return;
       }
-      // Fall back to a locally provisioned account (legacy records on this device).
-      const user = findStudentByPhone(phone);
-      if (!user || !validatePassword(user, password)) {
-        setSubmitting(false);
-        setError(("error" in res && res.error) || "Invalid phone number or password.");
-        return;
-      }
-      persistSession(user.id);
-      if (!remember) {
-        try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
-      }
-      navigate({ to: "/app" });
+      // No local/offline fallback: every sign-in must be authenticated by the backend.
+      setSubmitting(false);
+      setError(("error" in res && res.error) || "Invalid phone number or password.");
+      return;
     } catch {
       setSubmitting(false);
       setError("We could not reach the sign-in service. Please try again.");
