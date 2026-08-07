@@ -720,15 +720,13 @@ export const studentOverview = async (studentId: string): Promise<StudentOvervie
       : Promise.resolve([] as CloudLiveClass[]),
   ]);
 
-  const submittedIds = new Set(submissions.map((s) => s.assignment_id));
+  const watchedIds = new Set(watched.filter((w) => w.completed).map((w) => w.lecture_id));
 
+  // Progress = completed recorded lectures / published lectures of that course.
   const courses: CourseProgress[] = active.map((e) => {
-    const courseAssignments = assignments.filter((a) => a.course_id === e.course_id);
-    const courseAttendance = attendance.filter((a) => a.course_id === e.course_id);
-    const completed =
-      courseAssignments.filter((a) => submittedIds.has(a.id)).length +
-      courseAttendance.filter((a) => a.status === 'present').length;
-    const total = courseAssignments.length + courseAttendance.length;
+    const courseLectures = lectures.filter((l) => l.course_id === e.course_id);
+    const completed = courseLectures.filter((l) => watchedIds.has(l.id)).length;
+    const total = courseLectures.length;
     return {
       course: e.courses as CloudCourse,
       enrollment_id: e.id,
@@ -737,6 +735,7 @@ export const studentOverview = async (studentId: string): Promise<StudentOvervie
       percent: total > 0 ? Math.round((completed / total) * 100) : 0,
     };
   });
+
 
   const totalItems = courses.reduce((s, c) => s + c.total, 0);
   const doneItems = courses.reduce((s, c) => s + c.completed, 0);
