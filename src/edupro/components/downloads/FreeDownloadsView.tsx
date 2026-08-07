@@ -227,6 +227,15 @@ export const FreeDownloadsView: React.FC = () => {
           </form>
         </div>
       )}
+
+      {viewing && (
+        <MaterialViewerModal
+          title={viewing.title}
+          url={viewing.file_url}
+          fileType={viewing.file_type}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 };
