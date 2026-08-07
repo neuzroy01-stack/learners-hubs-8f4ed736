@@ -81,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'attendance_marker', label: 'Mark Attendance', icon: FileSpreadsheet },
           { id: 'study_materials', label: 'Study Materials', icon: FolderDown },
           { id: 'assignments', label: 'Assignment Reviewer', icon: FileCheck },
+          { id: 'quizzes', label: 'Quizzes & Exams', icon: Award },
           { id: 'my_salary', label: 'Salary Ledger', icon: DollarSign }
         ];
 
@@ -91,6 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'live_classes', label: 'Live Classes', icon: Radio },
           { id: 'recordings', label: 'Recorded Lectures', icon: Video },
           { id: 'assignments_quizzes', label: 'Assignments & Quizzes', icon: FileCheck },
+          { id: 'quizzes', label: 'Online Exams', icon: Award },
           { id: 'attendance_log', label: 'My Attendance', icon: FileSpreadsheet },
           { id: 'downloads', label: 'Study Downloads', icon: FolderDown },
           { id: 'my_fees', label: 'Fee Ledger & Proof', icon: CreditCard },
