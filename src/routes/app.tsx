@@ -9,6 +9,13 @@ export const Route = createFileRoute("/app")({
       { name: "description", content: "Your Learner Hub dashboard: courses, live classes, assignments, fees and certificates." },
       { name: "robots", content: "noindex" },
     ],
+    scripts: [
+      {
+        async: true,
+        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6098422409722649",
+        crossOrigin: "anonymous",
+      },
+    ],
   }),
   component: AppShellRoute,
 });
