@@ -32,23 +32,6 @@ export function toYouTubeWatchUrl(rawUrl: string): string | null {
   return id ? `https://www.youtube.com/watch?v=${id}` : null;
 }
 
-export function toEmbedUrl(url: string): string {
-  if (!url) return "";
-
-  // YouTube
-  const yt = toYouTubeEmbedUrl(url);
-  if (yt) return yt;
-
-  // Google Drive
-  const match = url.match(/\/file\/d\/([^/]+)/);
-
-  if (match) {
-    return `https://drive.google.com/file/d/${match[1]}/preview`;
-  }
-
-  return url;
-}
-
 interface FormState {
   id?: string;
   title: string;
@@ -99,7 +82,7 @@ export const RecordedLecturesView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
-  const embedUrl = selected ? toEmbedUrl(selected.video_url) : "";
+  const embedUrl = selected ? toYouTubeEmbedUrl(selected.video_url) : null;
   const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -120,10 +103,9 @@ export const RecordedLecturesView: React.FC = () => {
     e.preventDefault();
     if (!form || !activeCourseId) return;
     if (!form.title.trim()) return notify('error', 'Title is required');
-   /** if (!toYouTubeEmbedUrl(form.video_url)) {
-     * return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
-    } 
-    */
+    if (!toYouTubeEmbedUrl(form.video_url)) {
+      return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
+    }
     setSaving(true);
     try {
       const payload = {
@@ -284,7 +266,7 @@ export const RecordedLecturesView: React.FC = () => {
               <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
             </div>
             <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
-            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="Paste YouTube or Google Drive Video URL" className={inputCls} /></Field>
+            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" className={inputCls} /></Field>
             <Field label="Description"><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Week"><input type="number" min={1} value={form.week_number} onChange={(e) => setForm({ ...form, week_number: Math.max(1, Number(e.target.value) || 1) })} className={inputCls} /></Field>
