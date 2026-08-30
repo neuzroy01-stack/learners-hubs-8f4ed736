@@ -562,3 +562,451 @@ export const studentEnrollments = async (studentId: string) => {
   const rows = await enrollmentsApi.listByStudent(studentId);
   return rows.map((r) => ({ id: r.id, course_id: r.course_id, title: r.courses?.title ?? 'Course' }));
 };
+
+/* ---------------- PAYMENT PROOFS (private storage) ---------------- */
+export const paymentProofs = {
+  /** Uploads a screenshot into the student's own folder and returns the storage path. */
+  async upload(studentId: string, file: File) {
+    const safe = file.name.replace(/[^\w.\-]/g, '_');
+    const path = `${studentId}/${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from('payment-proofs').upload(path, file, { upsert: false });
+    if (error) throw new Error(error.message);
+    return path;
+  },
+  /** Short-lived signed URL — the bucket is private. */
+  async signedUrl(path: string) {
+    const { data } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 3600);
+    return data?.signedUrl ?? null;
+  },
+};
+
+/**
+ * Student-initiated UPI payment request.
+ * Always lands as `pending` — the outstanding balance is untouched until an
+ * admin verifies it (paid totals only ever count `verified` payments).
+ */
+export const submitPaymentRequest = async (input: {
+  studentId: string;
+  enrollmentId?: string | null;
+  courseId?: string | null;
+  amount: number;
+  utr: string;
+  note?: string | null;
+  proofPath?: string | null;
+}) => {
+  const row = unwrap(
+    await supabase
+      .from('payments')
+      .insert({
+        student_id: input.studentId,
+        enrollment_id: input.enrollmentId ?? null,
+        course_id: input.courseId ?? null,
+        amount: input.amount,
+        method: 'upi',
+        reference_no: input.utr,
+        receipt_url: input.proofPath ?? null,
+        notes: input.note ?? null,
+        status: 'pending',
+        paid_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+  ) as CloudPayment;
+  return row;
+};
+
+/** Approve / reject a payment request, with a reason the student can read back. */
+export const reviewPayment = async (
+  payment: CloudPayment,
+  decision: 'verified' | 'rejected',
+  reason?: string
+) => {
+  const uid = await currentUserId();
+  const row = unwrap(
+    await supabase
+      .from('payments')
+      .update({
+        status: decision,
+        notes: reason?.trim() ? reason.trim() : payment.notes,
+        verified_by: uid,
+        verified_at: new Date().toISOString(),
+      })
+      .eq('id', payment.id)
+      .select()
+      .single()
+  ) as CloudPayment;
+  if (row.enrollment_id) await recalcEnrollmentPaid(row.enrollment_id);
+  await notificationsApi
+    .send([
+      {
+        user_id: payment.student_id,
+        course_id: payment.course_id,
+        type: 'payment',
+        title: decision === 'verified' ? 'Payment approved' : 'Payment rejected',
+        body:
+          decision === 'verified'
+            ? `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} has been verified and applied to your fees.`
+            : `Your payment of ₹${Number(payment.amount).toLocaleString('en-IN')} was rejected. ${reason?.trim() || 'Please submit a new request.'}`,
+      },
+    ])
+    .catch(() => undefined);
+  await logAudit('REVIEW', 'payment', payment.id, { status: payment.status }, { status: decision, reason });
+  return row;
+};
+
+/* ---------------- STUDENT OVERVIEW (dashboard) ---------------- */
+export type CourseProgress = {
+  course: CloudCourse;
+  enrollment_id: string;
+  completed: number;
+  total: number;
+  percent: number;
+};
+
+export type StudentOverview = {
+  courses: CourseProgress[];
+  overallProgress: number;
+  attendance: { present: number; total: number; percent: number };
+  finance: StudentFinance;
+  upcomingLive: CloudLiveClass[];
+};
+
+/**
+ * Everything the student dashboard shows, derived only from database rows.
+ * Progress counts real completed activities (graded/submitted assignments and
+ * attended sessions) against everything scheduled for that course.
+ */
+export const studentOverview = async (studentId: string): Promise<StudentOverview> => {
+  const enrollments = await enrollmentsApi.listByStudent(studentId);
+  const active = enrollments.filter((e) => e.status === 'active' && e.courses);
+  const courseIds = active.map((e) => e.course_id);
+
+  const [lectures, watched, attendance] = await Promise.all([
+    courseIds.length
+      ? (unwrap(
+          await supabase
+            .from('recorded_lectures')
+            .select('id, course_id')
+            .in('course_id', courseIds)
+            .eq('is_published', true)
+        ) as { id: string; course_id: string }[])
+      : Promise.resolve([] as { id: string; course_id: string }[]),
+    courseIds.length
+      ? (unwrap(
+          await supabase
+            .from('lecture_progress')
+            .select('lecture_id, course_id, completed')
+            .eq('student_id', studentId)
+            .in('course_id', courseIds)
+        ) as { lecture_id: string; course_id: string; completed: boolean }[])
+      : Promise.resolve([] as { lecture_id: string; course_id: string; completed: boolean }[]),
+    attendanceApi.listByStudent(studentId),
+  ]);
+
+  const [finance, live] = await Promise.all([
+
+    studentFinance(studentId),
+    courseIds.length
+      ? (unwrap(
+          await supabase
+            .from('live_classes')
+            .select('*')
+            .in('course_id', courseIds)
+            .eq('is_published', true)
+            .gte('starts_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+            .order('starts_at', { ascending: true })
+            .limit(5)
+        ) as CloudLiveClass[])
+      : Promise.resolve([] as CloudLiveClass[]),
+  ]);
+
+  const watchedIds = new Set(watched.filter((w) => w.completed).map((w) => w.lecture_id));
+
+  // Progress = completed recorded lectures / published lectures of that course.
+  const courses: CourseProgress[] = active.map((e) => {
+    const courseLectures = lectures.filter((l) => l.course_id === e.course_id);
+    const completed = courseLectures.filter((l) => watchedIds.has(l.id)).length;
+    const total = courseLectures.length;
+    return {
+      course: e.courses as CloudCourse,
+      enrollment_id: e.id,
+      completed,
+      total,
+      percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    };
+  });
+
+
+  const totalItems = courses.reduce((s, c) => s + c.total, 0);
+  const doneItems = courses.reduce((s, c) => s + c.completed, 0);
+  const present = attendance.filter((a) => a.status === 'present').length;
+
+  return {
+    courses,
+    overallProgress: totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0,
+    attendance: {
+      present,
+      total: attendance.length,
+      percent: attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0,
+    },
+    finance,
+    upcomingLive: live,
+  };
+};
+
+/** Published catalogue for the public landing page (anon-readable). */
+export const publicCourses = async () => {
+  const { data, error } = await supabase
+    .from('courses')
+    .select('*')
+    .eq('is_published', true)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CloudCourse[];
+};
+
+/* ---------------- STAFF OVERVIEW (admin / teacher dashboards) ---------------- */
+export type StaffOverview = {
+  students: number;
+  teachers: number;
+  admins: number;
+  courses: number;
+  publishedCourses: number;
+  activeEnrollments: number;
+  revenue: RevenueSummary;
+  pendingPayments: number;
+  upcomingLive: CloudLiveClass[];
+  pendingSubmissions: number;
+};
+
+const countOf = async (table: 'profiles' | 'enrollments' | 'courses' | 'payments', apply: (q: any) => any) => {
+  const q = apply(supabase.from(table).select('id', { count: 'exact', head: true }));
+  const { count, error } = await q;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+};
+
+/** Live institute metrics for staff dashboards — no cached or demo numbers. */
+export const staffOverview = async (): Promise<StaffOverview> => {
+  const [students, teachers, admins, courses, publishedCourses, activeEnrollments, revenue, pendingPayments] =
+    await Promise.all([
+      countOf('profiles', (q) => q.eq('role', 'student')),
+      countOf('profiles', (q) => q.eq('role', 'teacher')),
+      countOf('profiles', (q) => q.in('role', ['admin', 'super_admin'])),
+      countOf('courses', (q) => q),
+      countOf('courses', (q) => q.eq('is_published', true)),
+      countOf('enrollments', (q) => q.eq('status', 'active')),
+      revenueSummary(),
+      countOf('payments', (q) => q.eq('status', 'pending')),
+    ]);
+
+  const upcomingLive = unwrap(
+    await supabase
+      .from('live_classes')
+      .select('*')
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: true })
+      .limit(5)
+  ) as CloudLiveClass[];
+
+  const pendingSubmissions = unwrap(
+    await supabase.from('assignment_submissions').select('id').eq('status', 'submitted')
+  ) as { id: string }[];
+
+  return {
+    students,
+    teachers,
+    admins,
+    courses,
+    publishedCourses,
+    activeEnrollments,
+    revenue,
+    pendingPayments,
+    upcomingLive,
+    pendingSubmissions: pendingSubmissions.length,
+  };
+};
+
+/* ---------------- LECTURE PROGRESS ---------------- */
+export type CloudLectureProgress = Tables['lecture_progress']['Row'];
+
+export const lectureProgressApi = {
+  /** All progress rows of one student inside one course. */
+  async listForCourse(studentId: string, courseId: string) {
+    return unwrap(
+      await supabase
+        .from('lecture_progress')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('course_id', courseId)
+    ) as CloudLectureProgress[];
+  },
+
+  /** Marks a lecture watched / unwatched for the signed-in student. */
+  async setCompleted(courseId: string, lectureId: string, completed: boolean) {
+    const uid = await currentUserId();
+    if (!uid) throw new Error('Please sign in again.');
+    const { error } = await supabase.from('lecture_progress').upsert(
+      {
+        student_id: uid,
+        course_id: courseId,
+        lecture_id: lectureId,
+        completed,
+        percent: completed ? 100 : 0,
+      },
+      { onConflict: 'student_id,lecture_id' }
+    );
+    if (error) throw new Error(error.message);
+  },
+};
+
+export type LectureProgressSummary = { total: number; completed: number; percent: number };
+
+/**
+ * Progress = completed recorded lectures / total published lectures.
+ * Returns null when the course has no lectures, so the UI can hide the widget
+ * instead of showing a meaningless 0%.
+ */
+export const courseLectureProgress = async (
+  studentId: string,
+  courseId: string
+): Promise<LectureProgressSummary | null> => {
+  const [lectures, progress] = await Promise.all([
+    unwrap(
+      await supabase
+        .from('recorded_lectures')
+        .select('id')
+        .eq('course_id', courseId)
+        .eq('is_published', true)
+    ) as { id: string }[],
+    lectureProgressApi.listForCourse(studentId, courseId),
+  ]);
+  const ids = new Set(lectures.map((l) => l.id));
+  if (ids.size === 0) return null;
+  const completed = progress.filter((p) => p.completed && ids.has(p.lecture_id)).length;
+  return { total: ids.size, completed, percent: Math.round((completed / ids.size) * 100) };
+};
+
+
+/* ---------------- QUIZZES / ONLINE EXAMS ---------------- */
+export type CloudQuiz = Tables['quizzes']['Row'];
+export type CloudQuizQuestion = Tables['quiz_questions']['Row'];
+export type CloudQuizAttempt = Tables['quiz_attempts']['Row'];
+/** Question as delivered to a student — the answer key is never included. */
+export type QuizPaperQuestion = {
+  id: string;
+  prompt: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  marks: number;
+  sort_order: number;
+};
+
+export const quizzesApi = {
+  async listByCourse(courseId: string) {
+    return unwrap(
+      await supabase
+        .from('quizzes')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('week_number', { ascending: true })
+        .order('created_at', { ascending: false })
+    ) as CloudQuiz[];
+  },
+
+  async create(payload: Tables['quizzes']['Insert']) {
+    const row = unwrap(await supabase.from('quizzes').insert(payload).select().single()) as CloudQuiz;
+    await logAudit('quiz.create', 'quizzes', row.id, null, payload);
+    return row;
+  },
+
+  async update(id: string, payload: Tables['quizzes']['Update']) {
+    const row = unwrap(await supabase.from('quizzes').update(payload).eq('id', id).select().single()) as CloudQuiz;
+    await logAudit('quiz.update', 'quizzes', id, null, payload);
+    return row;
+  },
+
+  async remove(id: string) {
+    const { error } = await supabase.from('quizzes').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    await logAudit('quiz.delete', 'quizzes', id);
+  },
+
+  /* --- questions (staff only; RLS hides the answer key from students) --- */
+  async questions(quizId: string) {
+    return unwrap(
+      await supabase.from('quiz_questions').select('*').eq('quiz_id', quizId).order('sort_order')
+    ) as CloudQuizQuestion[];
+  },
+
+  async saveQuestion(payload: Tables['quiz_questions']['Insert'] & { id?: string }) {
+    const { id, ...rest } = payload;
+    if (id) {
+      return unwrap(
+        await supabase.from('quiz_questions').update(rest).eq('id', id).select().single()
+      ) as CloudQuizQuestion;
+    }
+    return unwrap(
+      await supabase.from('quiz_questions').insert(rest).select().single()
+    ) as CloudQuizQuestion;
+  },
+
+  async removeQuestion(id: string) {
+    const { error } = await supabase.from('quiz_questions').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+
+  /* --- student attempt flow: every rule is enforced in the database --- */
+  async paper(quizId: string) {
+    const { data, error } = await supabase.rpc('quiz_paper', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as QuizPaperQuestion[];
+  },
+
+  async startAttempt(quizId: string) {
+    const { data, error } = await supabase.rpc('start_quiz_attempt', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+
+  async saveAnswers(attemptId: string, answers: Record<string, string>) {
+    const { error } = await supabase.rpc('save_quiz_answers', {
+      _attempt_id: attemptId,
+      _answers: answers as never,
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  async submitAttempt(attemptId: string, answers: Record<string, string>) {
+    const { data, error } = await supabase.rpc('submit_quiz_attempt', {
+      _attempt_id: attemptId,
+      _answers: answers as never,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+
+  async myAttempts(quizId: string, studentId: string) {
+    return unwrap(
+      await supabase
+        .from('quiz_attempts')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .eq('student_id', studentId)
+        .order('attempt_no', { ascending: false })
+    ) as CloudQuizAttempt[];
+  },
+
+  /** Staff view of everyone's attempts for one quiz. */
+  async attemptsForQuiz(quizId: string) {
+    return unwrap(
+      await supabase
+        .from('quiz_attempts')
+        .select('*')
+        .eq('quiz_id', quizId)
+        .order('submitted_at', { ascending: false })
+    ) as CloudQuizAttempt[];
+  },
+};

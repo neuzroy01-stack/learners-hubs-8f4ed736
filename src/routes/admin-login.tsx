@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, ShieldCheck, ArrowRight, User as UserIcon } from "lucide-react";
-import { findAdminByIdentifier, validatePassword, persistSession } from "../edupro/services/authService";
 import { signIn, needsBootstrap, bootstrapSuperAdmin } from "../lib/accounts.functions";
 import { completeCloudSignIn } from "../edupro/services/cloudAuth";
 
@@ -86,17 +85,10 @@ function AdminLoginPage() {
         navigate({ to: "/app" });
         return;
       }
-      const user = findAdminByIdentifier(adminId);
-      if (!user || !validatePassword(user, password)) {
-        setSubmitting(false);
-        setError(("error" in res && res.error) || "Invalid credentials. Student accounts must use the Student Login page.");
-        return;
-      }
-      persistSession(user.id);
-      if (!remember) {
-        try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
-      }
-      navigate({ to: "/app" });
+      // No local/offline fallback: staff must authenticate against the backend.
+      setSubmitting(false);
+      setError(("error" in res && res.error) || "Invalid credentials. Student accounts must use the Student Login page.");
+      return;
     } catch {
       setSubmitting(false);
       setError("We could not reach the sign-in service. Please try again.");

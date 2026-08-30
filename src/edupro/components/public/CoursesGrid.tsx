@@ -43,10 +43,12 @@ export const CoursesGrid: React.FC<Props> = ({ courses }) => {
               <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-900/80 text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur">
                 {c.level}
               </span>
-              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-white/95 dark:bg-slate-950/90 text-slate-900 dark:text-white text-[11px] font-bold flex items-center gap-1">
-                <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {c.rating}
-                <span className="text-slate-500 dark:text-slate-400 font-medium">({c.reviewsCount})</span>
-              </span>
+              {c.rating > 0 && (
+                <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-white/95 dark:bg-slate-950/90 text-slate-900 dark:text-white text-[11px] font-bold flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {c.rating}
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">({c.reviewsCount})</span>
+                </span>
+              )}
             </div>
 
             <div className="p-5 flex flex-col flex-1">
