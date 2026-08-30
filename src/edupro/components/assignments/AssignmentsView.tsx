@@ -10,7 +10,6 @@ import {
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
-import { RichText } from '../common/RichText';
 import { useAuth } from '../../context/AuthContext';
 
 const inputCls =
@@ -147,7 +146,7 @@ export const AssignmentsView: React.FC = () => {
                   {row.max_marks} marks
                 </span>
               </div>
-              {row.instructions && <RichText text={row.instructions} className="mt-2 space-y-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300" />}
+              {row.instructions && <p className="mt-2 text-xs text-slate-500">{row.instructions}</p>}
               <p className="mt-2 text-[11px] text-slate-500">
                 Due: {row.due_at ? new Date(row.due_at).toLocaleString('en-IN') : 'No deadline'}
               </p>
@@ -207,7 +206,7 @@ export const AssignmentsView: React.FC = () => {
         <Modal title={form.id ? 'Edit assignment' : 'New assignment'} onClose={() => setForm(null)}>
           <form onSubmit={save} className="space-y-3">
             <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
-            <Field label="Instructions"><textarea rows={8} placeholder={"Line breaks, blank lines, - bullets, 1. numbered lists, **bold** and *italic* are preserved."} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} className={inputCls} /></Field>
+            <Field label="Instructions"><textarea rows={3} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Max marks"><input value={form.max_marks} onChange={(e) => setForm({ ...form, max_marks: e.target.value })} className={inputCls} inputMode="numeric" /></Field>
               <Field label="Due date"><input type="datetime-local" value={form.due_at} onChange={(e) => setForm({ ...form, due_at: e.target.value })} className={inputCls} /></Field>

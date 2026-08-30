@@ -1,11 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { FolderDown, FileText, Download, Eye, Plus, Search, Trash2, Pencil, RefreshCw, X } from 'lucide-react';
+import { FolderDown, FileText, Download, Plus, Search, Trash2, Pencil, RefreshCw, X } from 'lucide-react';
 import { materialsApi, type CloudMaterial } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
-import { RichText } from '../common/RichText';
-import { MaterialViewerModal } from '../common/MaterialViewerModal';
 
 const inputCls =
   'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800';
@@ -49,7 +47,6 @@ export const FreeDownloadsView: React.FC = () => {
     return q ? rows.filter((m) => m.title.toLowerCase().includes(q)) : rows;
   }, [data, search, canManage]);
 
-  const [viewing, setViewing] = useState<CloudMaterial | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -146,7 +143,7 @@ export const FreeDownloadsView: React.FC = () => {
                 </span>
               </div>
               <h3 className="text-sm font-bold leading-snug text-slate-900 dark:text-white">{mat.title}</h3>
-              <RichText text={mat.description} />
+              {mat.description && <p className="text-xs text-slate-500">{mat.description}</p>}
             </div>
             <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
               <span className="text-[10px] text-slate-400">{new Date(mat.created_at).toLocaleDateString('en-IN')}</span>
@@ -174,14 +171,7 @@ export const FreeDownloadsView: React.FC = () => {
                     </button>
                   </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setViewing(mat)}
-                  className="flex items-center gap-1.5 rounded-xl border border-blue-200 px-3 py-1.5 font-bold text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                >
-                  <Eye className="h-3.5 w-3.5" /> View
-                </button>
-                <a href={mat.file_url} target="_blank" rel="noreferrer" download className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 font-bold text-white shadow-sm hover:bg-blue-700">
+                <a href={mat.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 font-bold text-white shadow-sm hover:bg-blue-700">
                   <Download className="h-3.5 w-3.5" /> Download
                 </a>
               </div>
@@ -226,15 +216,6 @@ export const FreeDownloadsView: React.FC = () => {
             </button>
           </form>
         </div>
-      )}
-
-      {viewing && (
-        <MaterialViewerModal
-          title={viewing.title}
-          url={viewing.file_url}
-          fileType={viewing.file_type}
-          onClose={() => setViewing(null)}
-        />
       )}
     </div>
   );

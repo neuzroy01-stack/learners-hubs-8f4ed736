@@ -1,4 +1,3 @@
-import { formatAppDateTime } from '../../lib/datetime';
 import React, { useState } from 'react';
 import { BookOpen, Radio, Video, FileText, ClipboardList, RefreshCw, ExternalLink } from 'lucide-react';
 import {
@@ -94,7 +93,7 @@ export const MyCloudCoursesView: React.FC = () => {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {tab === 'live' && (content.data?.live ?? []).map((c) => (
-              <Item key={c.id} title={c.title} subtitle={`${formatAppDateTime(c.starts_at)} · ${c.platform}`} body={c.description} href={c.meeting_url} action="Join class" />
+              <Item key={c.id} title={c.title} subtitle={`${new Date(c.starts_at).toLocaleString('en-IN')} · ${c.platform}`} body={c.description} href={c.meeting_url} action="Join class" />
             ))}
             {tab === 'recorded' && (content.data?.recorded ?? []).map((l) => (
               <Item key={l.id} title={l.title} subtitle={l.duration_minutes ? `${l.duration_minutes} min` : undefined} body={l.description} href={l.video_url} action="Watch" />
