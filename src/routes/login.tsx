@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Phone, Lock, ShieldCheck, ArrowRight } from "lucide-react";
-
+import { findStudentByPhone, validatePassword, persistSession } from "../edupro/services/authService";
 import { signIn } from "../lib/accounts.functions";
 import { completeCloudSignIn } from "../edupro/services/cloudAuth";
 
@@ -52,10 +52,18 @@ function StudentLoginPage() {
         navigate({ to: "/app" });
         return;
       }
-      // No local/offline fallback: every sign-in must be authenticated by the backend.
-      setSubmitting(false);
-      setError(("error" in res && res.error) || "Invalid phone number or password.");
-      return;
+      // Fall back to a locally provisioned account (legacy records on this device).
+      const user = findStudentByPhone(phone);
+      if (!user || !validatePassword(user, password)) {
+        setSubmitting(false);
+        setError(("error" in res && res.error) || "Invalid phone number or password.");
+        return;
+      }
+      persistSession(user.id);
+      if (!remember) {
+        try { sessionStorage.setItem("lh_uid_ephemeral", "1"); } catch { /* blocked */ }
+      }
+      navigate({ to: "/app" });
     } catch {
       setSubmitting(false);
       setError("We could not reach the sign-in service. Please try again.");

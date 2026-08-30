@@ -5,9 +5,12 @@ import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
 import { useAuth } from '../../context/AuthContext';
-import { toAppInput, appInputToIso, formatAppDateTime } from '../../lib/datetime';
 
-const toLocalInput = toAppInput;
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 interface FormState {
   id?: string;
@@ -73,8 +76,8 @@ export const LiveClassesView: React.FC = () => {
         description: form.description.trim() || null,
         platform: form.platform,
         meeting_url: form.meeting_url.trim() || null,
-        starts_at: appInputToIso(form.starts_at),
-        ends_at: form.ends_at ? appInputToIso(form.ends_at) : null,
+        starts_at: new Date(form.starts_at).toISOString(),
+        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
         is_published: form.is_published,
         teacher_id: currentUser?.id ?? null,
       };
@@ -152,7 +155,7 @@ export const LiveClassesView: React.FC = () => {
                 <h3 className="text-sm font-black text-slate-900 dark:text-white">{row.title}</h3>
                 <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
                   <Calendar className="h-3.5 w-3.5" />
-                  {formatAppDateTime(row.starts_at)}
+                  {new Date(row.starts_at).toLocaleString('en-IN')}
                 </p>
               </div>
               <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -205,8 +208,8 @@ export const LiveClassesView: React.FC = () => {
                 </select>
               </Field>
               <Field label="Meeting URL"><input value={form.meeting_url} onChange={(e) => setForm({ ...form, meeting_url: e.target.value })} className={inputCls} /></Field>
-              <Field label="Starts at"><input type="datetime-local" step={60} value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} className={inputCls} /></Field>
-              <Field label="Ends at"><input type="datetime-local" step={60} value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} className={inputCls} /></Field>
+              <Field label="Starts at"><input type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} className={inputCls} /></Field>
+              <Field label="Ends at"><input type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} className={inputCls} /></Field>
             </div>
             <label className="flex items-center gap-2 text-xs font-bold">
               <input type="checkbox" checked={form.is_published} onChange={(e) => setForm({ ...form, is_published: e.target.checked })} />
