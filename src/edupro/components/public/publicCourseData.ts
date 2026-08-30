@@ -1,4 +1,5 @@
-import { publicCourses } from '../../services/cloudDb';
+import { INITIAL_COURSES } from '../../services/mockData';
+import type { Course } from '../../types/lms';
 
 export interface PublicCourseCard {
   id: string;
@@ -16,32 +17,29 @@ export interface PublicCourseCard {
   reviewsCount: number;
 }
 
-const FALLBACK_THUMB =
-  'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=1200';
+const LEVELS: PublicCourseCard['level'][] = ['Beginner', 'Intermediate', 'Advanced'];
 
-const normaliseLevel = (level: string | null): PublicCourseCard['level'] => {
-  const v = (level ?? '').toLowerCase();
-  if (v.startsWith('adv')) return 'Advanced';
-  if (v.startsWith('inter')) return 'Intermediate';
-  return 'Beginner';
+const deriveMeta = (c: Course, index: number) => {
+  // deterministic mock enrichments so the landing feels populated
+  const level = LEVELS[index % LEVELS.length];
+  const rating = 4.4 + ((index * 13) % 6) / 10; // 4.4 - 4.9
+  const reviewsCount = 120 + ((index * 47) % 900);
+  return { level, rating: Number(rating.toFixed(1)), reviewsCount };
 };
 
-/** Published catalogue straight from the database — no demo courses. */
-export const getPublicCourses = async (): Promise<PublicCourseCard[]> => {
-  const rows = await publicCourses();
-  return rows.map((c) => ({
-    id: c.id,
-    code: c.code ?? '',
-    title: c.title,
-    category: c.category ?? 'Program',
-    description: c.description ?? '',
-    thumbnail: c.thumbnail_url || FALLBACK_THUMB,
-    banner: c.thumbnail_url || undefined,
-    instructorName: c.instructor_name ?? 'Learner Hub Faculty',
-    durationMonths: c.duration_months ?? 0,
-    feeAmount: Number(c.official_fee ?? 0),
-    level: normaliseLevel(c.level),
-    rating: 0,
-    reviewsCount: 0,
-  }));
-};
+export const getPublicCourses = (): PublicCourseCard[] =>
+  INITIAL_COURSES
+    .filter((c) => c.status === 'published')
+    .map((c, i) => ({
+      id: c.id,
+      code: c.code,
+      title: c.title,
+      category: c.category,
+      description: c.description,
+      thumbnail: c.thumbnail,
+      banner: c.banner,
+      instructorName: c.instructorName,
+      durationMonths: c.durationMonths,
+      feeAmount: c.feeAmount,
+      ...deriveMeta(c, i),
+    }));
