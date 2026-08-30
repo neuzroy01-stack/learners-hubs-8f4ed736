@@ -79,14 +79,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
       {/* Student Welcome Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center space-x-4">
-         
-          {/*
           <img
             src={student.photoUrl}
             alt={student.fullName}
             className="w-16 h-16 rounded-2xl object-cover ring-4 ring-blue-500/30 shadow-lg"
           />
-          */}
           <div>
             <div className="flex items-center space-x-2">
               <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-full text-xs font-bold">
@@ -195,14 +192,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               <p className="text-xs text-slate-500">{activeCourse.description}</p>
             </div>
 
-            {/*
             <button
               onClick={() => onSelectCourse(activeCourse)}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition-all cursor-pointer shrink-0"
             >
               <PlayCircle className="w-4 h-4" />
               <span>Continue Learning (Video Classroom)</span>
-            </button> */}
+            </button>
           </div>
 
           {/* Week-wise & Day-wise Syllabus Roadmap */}
