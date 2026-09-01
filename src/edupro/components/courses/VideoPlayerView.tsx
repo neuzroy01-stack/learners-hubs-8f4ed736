@@ -1,287 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { Course, Lesson } from '../../types/lms';
-import { db } from '../../services/db';
-import { useAuth } from '../../context/AuthContext';
-import {
-  ArrowLeft,
-  PlayCircle,
-  CheckCircle2,
-  
-  Lock,
-  FileText,
-  Download,
-  Clock,
-  Sparkles,
-  ChevronRight,
-  BookOpen
-} from 'lucide-react';
-
-interface VideoPlayerViewProps {
-  course: Course;
-  onBack: () => void;
+export interface VideoSourceResult {
+  type: 'google-drive' | 'youtube' | 'direct' | 'unknown';
+  url: string;
 }
 
-export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack }) => {
-  const { currentUser, studentProfile } = useAuth();
-  const allLessons = course.modules.flatMap((m) => m.lessons);
-  const [activeLesson, setActiveLesson] = useState<Lesson>(allLessons[0] || course.modules[0]?.lessons[0]);
-  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>(['les-1']);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [studentNotes, setStudentNotes] = useState<string>('Personal Study Note: Remember to practice Express middleware chains and JWT token verification algorithms.');
-
-  const studentId = studentProfile?.id || 'stu-1';
-
-  const handleMarkCompleted = (lessonId: string) => {
-    if (!completedLessonIds.includes(lessonId)) {
-      const updated = [...completedLessonIds, lessonId];
-      setCompletedLessonIds(updated);
-
-      db.saveVideoProgress({
-        studentId,
-        lessonId,
-        watchedSeconds: activeLesson.durationMinutes * 60,
-        totalSeconds: activeLesson.durationMinutes * 60,
-        completed: true,
-        updatedAt: new Date().toISOString()
-      });
-
-      // Update enrollment progress percentage
-      const enrollments = db.getEnrollments();
-      const studentEnrollment = enrollments.find((e) => e.studentId === studentId && e.courseId === course.id);
-      if (studentEnrollment) {
-        studentEnrollment.progressPercentage = Math.min(100, Math.round((updated.length / allLessons.length) * 100));
-        localStorage.setItem('edupro_enrollments_v2', JSON.stringify(enrollments));
-      }
-    }
-  };
-
- const getVideoSource = (url: string) => {
-  if (!url) {
+export const getVideoSource = (url: string): VideoSourceResult => {
+  if (!url || typeof url !== 'string') {
     return { type: 'unknown', url: '' };
   }
 
-  // Google Drive
-  if (url.includes('drive.google.com')) {
-    const match = url.match(/\/file\/d\/([^/]+)/);
+  const cleanUrl = url.trim();
 
-    if (match?.[1]) {
+  // 1. Google Drive (Handles /file/d/ID/view, open?id=ID, etc.)
+  if (cleanUrl.includes('drive.google.com')) {
+    const driveMatch =
+      cleanUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+      cleanUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+
+    if (driveMatch?.[1]) {
       return {
         type: 'google-drive',
-        url: `https://drive.google.com/file/d/${match[1]}/preview`,
+        url: `https://drive.google.com/file/d/${driveMatch[1]}/preview`,
       };
     }
   }
 
-  // YouTube
-  const youtubeMatch = url.match(
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/
-  );
+  // 2. YouTube (Handles watch?v=, youtu.be/, shorts/, embed/)
+  if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) {
+    const youtubeMatch = cleanUrl.match(
+      /(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+    );
 
-  if (youtubeMatch?.[1]) {
-    return {
-      type: 'youtube',
-      url: `https://www.youtube.com/embed/${youtubeMatch[1]}?rel=0`,
-    };
+    if (youtubeMatch?.[1]) {
+      return {
+        type: 'youtube',
+        url: `https://www.youtube.com/embed/${youtubeMatch[1]}?rel=0&modestbranding=1`,
+      };
+    }
   }
 
-  // Direct video
+  // 3. Direct video link (.mp4, .webm, etc.)
   return {
     type: 'direct',
-    url,
+    url: cleanUrl,
   };
-};
-  return (
-    <div className="p-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-        <button
-          onClick={onBack}
-          className="flex items-center space-x-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Course Catalog</span>
-        </button>
-
-        <div className="flex items-center space-x-2">
-          <span className="px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded-full text-xs font-bold">
-            {course.code}
-          </span>
-          <span className="text-xs font-bold text-slate-900 dark:text-white">{course.title}</span>
-        </div>
-      </div>
-
-      {/* Main Grid: Player + Lesson Sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Video Screen & Lesson Controls */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 aspect-video relative flex items-center justify-center">
-           {(() => {
-  const videoSource = getVideoSource(
-    activeLesson?.videoUrl || ''
-  );
-
-  if (videoSource.type === 'youtube') {
-    return (
-      <iframe
-  src={videoSource.url}
-  title={activeLesson?.title || 'Google Drive Video'}
-  className="w-full h-full border-0"
-  allow="autoplay; fullscreen; encrypted-media"
-  allowFullScreen
-/>
-    );
-  }
-
-  if (videoSource.type === 'google-drive') {
-    return (
-      <iframe
-        src={videoSource.url}
-        title={activeLesson?.title || 'Google Drive Video'}
-        className="w-full h-full border-0"
-        allow="autoplay; fullscreen"
-        allowFullScreen
-      />
-    );
-  }
-
-  if (videoSource.type === 'direct') {
-    return (
-      <video
-        controls
-        src={videoSource.url}
-        className="w-full h-full object-cover"
-        playsInline
-      />
-    );
-  }
-
-  return (
-    <div className="text-white text-sm">
-      Video link is missing or invalid.
-    </div>
-  );
-})()}
-          </div>
-
-          {/* Lesson Metadata Bar */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{activeLesson?.title}</h2>
-                <p className="text-xs text-slate-500 mt-0.5">{activeLesson?.description}</p>
-              </div>
-
-              <button
-                onClick={() => handleMarkCompleted(activeLesson.id)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition-all cursor-pointer ${
-                  completedLessonIds.includes(activeLesson.id)
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
-                }`}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{completedLessonIds.includes(activeLesson.id) ? 'Completed' : 'Mark as Completed'}</span>
-              </button>
-            </div>
-
-            {/* Resource Downloads & Attachments */}
-            {activeLesson?.attachmentUrl && (
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span>Lecture Attachment: {activeLesson.attachmentName || 'Resource_Notes.pdf'}</span>
-                </div>
-                <a
-                  href={activeLesson.attachmentUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center space-x-1.5"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download PDF</span>
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Personal Student Study Notes Box */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-            <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Personal Study Notes & Highlights</span>
-            </h3>
-            <textarea
-              value={studentNotes}
-              onChange={(e) => setStudentNotes(e.target.value)}
-              rows={3}
-              placeholder="Take notes while watching video lectures..."
-              className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        {/* Right Column: Course Curriculum Playlist */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4 max-h-[85vh] overflow-y-auto">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Course Curriculum</h3>
-              <p className="text-[10px] text-slate-400">{completedLessonIds.length} of {allLessons.length} Completed</p>
-            </div>
-            <span className="text-xs font-bold text-blue-600">
-              {Math.round((completedLessonIds.length / allLessons.length) * 100)}%
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            {course.modules.map((mod) => (
-              <div key={mod.id} className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                  {mod.title}
-                </h4>
-
-                <div className="space-y-1.5">
-                  {mod.lessons.map((les) => {
-                    const isCurrent = activeLesson?.id === les.id;
-                    const isDone = completedLessonIds.includes(les.id);
-
-                    return (
-                      <div
-                        key={les.id}
-                        onClick={() => !les.isLocked && setActiveLesson(les)}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                          isCurrent
-                            ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 shadow-sm'
-                            : les.isLocked
-                            ? 'border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900'
-                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-3">
-                          {isDone ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                          ) : les.isLocked ? (
-                            <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                          ) : (
-                            <PlayCircle className={`w-4 h-4 shrink-0 ${isCurrent ? 'text-blue-600' : 'text-slate-400'}`} />
-                          )}
-                          <div>
-                            <p className={`text-xs font-bold ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-900 dark:text-white'}`}>
-                              {les.title}
-                            </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{les.durationMinutes} mins</p>
-                          </div>
-                        </div>
-
-                        {isCurrent && <ChevronRight className="w-4 h-4 text-blue-600" />}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 };
