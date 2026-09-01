@@ -55,75 +55,24 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     }
   };
 
-  const getVideoSource = (url: string) => {
+ const getVideoSource = (url: string) => {
   if (!url) {
     return { type: 'unknown', url: '' };
   }
 
-  // =========================
-  // GOOGLE DRIVE
-  // =========================
-
+  // Google Drive
   if (url.includes('drive.google.com')) {
-    let fileId = '';
+    const match = url.match(/\/file\/d\/([^/]+)/);
 
-    // Format:
-    // https://drive.google.com/file/d/FILE_ID/view
-    const fileMatch = url.match(
-      /drive\.google\.com\/file\/d\/([^/?#]+)/
-    );
-
-    if (fileMatch?.[1]) {
-      fileId = fileMatch[1];
-    }
-
-    // Format:
-    // https://drive.google.com/open?id=FILE_ID
-    // https://drive.google.com/uc?id=FILE_ID
-    if (!fileId) {
-      try {
-        const parsedUrl = new URL(url);
-        fileId = parsedUrl.searchParams.get('id') || '';
-      } catch {
-        // Invalid URL
-      }
-    }
-
-    if (fileId) {
-      // Keep resourcekey if the Google Drive sharing link contains one
-      let resourceKey = '';
-
-      try {
-        const parsedUrl = new URL(url);
-        resourceKey =
-          parsedUrl.searchParams.get('resourcekey') || '';
-      } catch {
-        // Ignore invalid URL
-      }
-
-      const previewUrl = resourceKey
-        ? `https://drive.google.com/file/d/${fileId}/preview?resourcekey=${encodeURIComponent(resourceKey)}`
-        : `https://drive.google.com/file/d/${fileId}/preview`;
-
+    if (match?.[1]) {
       return {
         type: 'google-drive',
-        url: previewUrl,
-      };
-    }
-
-    // Already a Drive preview URL
-    if (url.includes('/preview')) {
-      return {
-        type: 'google-drive',
-        url,
+        url: `https://drive.google.com/file/d/${match[1]}/preview`,
       };
     }
   }
 
-  // =========================
-  // YOUTUBE
-  // =========================
-
+  // YouTube
   const youtubeMatch = url.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/
   );
@@ -135,10 +84,7 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     };
   }
 
-  // =========================
-  // DIRECT VIDEO
-  // =========================
-
+  // Direct video
   return {
     type: 'direct',
     url,
