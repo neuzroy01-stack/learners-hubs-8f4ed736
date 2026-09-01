@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   PlayCircle,
   CheckCircle2,
+  
   Lock,
   FileText,
   Download,
@@ -54,13 +55,68 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     }
   };
 
-  const getYoutubeEmbedUrl = (url: string) => {
-    if (url.includes('youtube.com/watch?v=')) {
-      const id = url.split('v=')[1]?.split('&')[0];
-      return `https://www.youtube.com/embed/${id}?autoplay=1`;
-    }
-    return url;
+  const getVideoSource = (url: string) => {
+  if (!url) return { type: 'unknown', url: '' };
+
+  // YouTube: watch?v=...
+  const youtubeWatchMatch = url.match(
+    /(?:youtube\.com\/watch\?v=)([^&\s]+)/
+  );
+
+  // YouTube: youtu.be/...
+  const youtubeShortMatch = url.match(
+    /(?:youtu\.be\/)([^?\s]+)/
+  );
+
+  // YouTube: embed/...
+  const youtubeEmbedMatch = url.match(
+    /(?:youtube\.com\/embed\/)([^?\s]+)/
+  );
+
+  // YouTube: shorts/...
+  const youtubeShortsMatch = url.match(
+    /(?:youtube\.com\/shorts\/)([^?\s]+)/
+  );
+
+  const youtubeId =
+    youtubeWatchMatch?.[1] ||
+    youtubeShortMatch?.[1] ||
+    youtubeEmbedMatch?.[1] ||
+    youtubeShortsMatch?.[1];
+
+  if (youtubeId) {
+    return {
+      type: 'youtube',
+      url: `https://www.youtube.com/embed/${youtubeId}?autoplay=0&rel=0`,
+    };
+  }
+
+  // Google Drive: /file/d/FILE_ID/view...
+  const driveMatch = url.match(
+    /drive\.google\.com\/file\/d\/([^/]+)/
+  );
+
+  if (driveMatch?.[1]) {
+    return {
+      type: 'google-drive',
+      url: `https://drive.google.com/file/d/${driveMatch[1]}/preview`,
+    };
+  }
+
+  // Already a Google Drive preview URL
+  if (url.includes('drive.google.com') && url.includes('/preview')) {
+    return {
+      type: 'google-drive',
+      url,
+    };
+  }
+
+  // Normal direct video URL
+  return {
+    type: 'direct',
+    url,
   };
+};
 
   return (
     <div className="p-6 space-y-6">
@@ -87,21 +143,42 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
         {/* Left Column: Video Screen & Lesson Controls */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 aspect-video relative flex items-center justify-center">
-            {activeLesson?.videoType === 'youtube' ? (
-              <iframe
-                src={getYoutubeEmbedUrl(activeLesson.videoUrl)}
-                title={activeLesson.title}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            ) : (
-              <video
-                controls
-                src={activeLesson?.videoUrl}
-                className="w-full h-full object-cover"
-              />
-            )}
+           {(() => {
+  const videoSource = getVideoSource(activeLesson?.videoUrl || '');
+
+  if (videoSource.type === 'youtube') {
+    return (
+      <iframe
+        src={videoSource.url}
+        title={activeLesson?.title || 'YouTube Video'}
+        className="w-full h-full border-0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+      />
+    );
+  }
+
+  if (videoSource.type === 'google-drive') {
+    return (
+      <iframe
+        src={videoSource.url}
+        title={activeLesson?.title || 'Google Drive Video'}
+        className="w-full h-full border-0"
+        allow="autoplay; fullscreen"
+        allowFullScreen
+      />
+    );
+  }
+
+  return (
+    <video
+      controls
+      src={videoSource.url}
+      className="w-full h-full object-cover"
+      playsInline
+    />
+  );
+})()}
           </div>
 
           {/* Lesson Metadata Bar */}
