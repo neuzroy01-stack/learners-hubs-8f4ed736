@@ -377,6 +377,60 @@ export type Database = {
           },
         ]
       }
+      lecture_progress: {
+        Row: {
+          completed: boolean
+          course_id: string
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          lecture_id: string
+          percent: number
+          student_id: string
+          updated_at: string
+          watched_seconds: number
+        }
+        Insert: {
+          completed?: boolean
+          course_id: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          lecture_id: string
+          percent?: number
+          student_id: string
+          updated_at?: string
+          watched_seconds?: number
+        }
+        Update: {
+          completed?: boolean
+          course_id?: string
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          lecture_id?: string
+          percent?: number
+          student_id?: string
+          updated_at?: string
+          watched_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_progress_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_progress_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "recorded_lectures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       live_classes: {
         Row: {
           course_id: string
@@ -607,6 +661,198 @@ export type Database = {
         }
         Relationships: []
       }
+      quiz_attempts: {
+        Row: {
+          answers: Json
+          attempt_no: number
+          correct_count: number | null
+          created_at: string
+          expires_at: string
+          id: string
+          passed: boolean | null
+          percentage: number | null
+          quiz_id: string
+          score: number | null
+          started_at: string
+          status: string
+          student_id: string
+          submitted_at: string | null
+          unanswered_count: number | null
+          updated_at: string
+          wrong_count: number | null
+        }
+        Insert: {
+          answers?: Json
+          attempt_no?: number
+          correct_count?: number | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          passed?: boolean | null
+          percentage?: number | null
+          quiz_id: string
+          score?: number | null
+          started_at?: string
+          status?: string
+          student_id: string
+          submitted_at?: string | null
+          unanswered_count?: number | null
+          updated_at?: string
+          wrong_count?: number | null
+        }
+        Update: {
+          answers?: Json
+          attempt_no?: number
+          correct_count?: number | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          passed?: boolean | null
+          percentage?: number | null
+          quiz_id?: string
+          score?: number | null
+          started_at?: string
+          status?: string
+          student_id?: string
+          submitted_at?: string | null
+          unanswered_count?: number | null
+          updated_at?: string
+          wrong_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_attempts_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_questions: {
+        Row: {
+          correct_option: string
+          created_at: string
+          id: string
+          marks: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          prompt: string
+          quiz_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          correct_option: string
+          created_at?: string
+          id?: string
+          marks?: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          prompt: string
+          quiz_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          correct_option?: string
+          created_at?: string
+          id?: string
+          marks?: number
+          option_a?: string
+          option_b?: string
+          option_c?: string
+          option_d?: string
+          prompt?: string
+          quiz_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_questions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quizzes: {
+        Row: {
+          course_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          is_published: boolean
+          max_attempts: number
+          passing_marks: number
+          show_result_immediately: boolean
+          shuffle_options: boolean
+          shuffle_questions: boolean
+          starts_at: string | null
+          time_limit_minutes: number
+          title: string
+          total_marks: number
+          updated_at: string
+          week_number: number | null
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          is_published?: boolean
+          max_attempts?: number
+          passing_marks?: number
+          show_result_immediately?: boolean
+          shuffle_options?: boolean
+          shuffle_questions?: boolean
+          starts_at?: string | null
+          time_limit_minutes?: number
+          title: string
+          total_marks?: number
+          updated_at?: string
+          week_number?: number | null
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          is_published?: boolean
+          max_attempts?: number
+          passing_marks?: number
+          show_result_immediately?: boolean
+          shuffle_options?: boolean
+          shuffle_questions?: boolean
+          starts_at?: string | null
+          time_limit_minutes?: number
+          title?: string
+          total_marks?: number
+          updated_at?: string
+          week_number?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quizzes_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recorded_lectures: {
         Row: {
           course_id: string
@@ -750,6 +996,79 @@ export type Database = {
       is_staff: { Args: { _user_id: string }; Returns: boolean }
       is_staff_admin: { Args: { _user_id: string }; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      quiz_paper: {
+        Args: { _quiz_id: string }
+        Returns: {
+          id: string
+          marks: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          prompt: string
+          sort_order: number
+        }[]
+      }
+      save_quiz_answers: {
+        Args: { _answers: Json; _attempt_id: string }
+        Returns: undefined
+      }
+      start_quiz_attempt: {
+        Args: { _quiz_id: string }
+        Returns: {
+          answers: Json
+          attempt_no: number
+          correct_count: number | null
+          created_at: string
+          expires_at: string
+          id: string
+          passed: boolean | null
+          percentage: number | null
+          quiz_id: string
+          score: number | null
+          started_at: string
+          status: string
+          student_id: string
+          submitted_at: string | null
+          unanswered_count: number | null
+          updated_at: string
+          wrong_count: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "quiz_attempts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      submit_quiz_attempt: {
+        Args: { _answers?: Json; _attempt_id: string }
+        Returns: {
+          answers: Json
+          attempt_no: number
+          correct_count: number | null
+          created_at: string
+          expires_at: string
+          id: string
+          passed: boolean | null
+          percentage: number | null
+          quiz_id: string
+          score: number | null
+          started_at: string
+          status: string
+          student_id: string
+          submitted_at: string | null
+          unanswered_count: number | null
+          updated_at: string
+          wrong_count: number | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "quiz_attempts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "teacher" | "student"
