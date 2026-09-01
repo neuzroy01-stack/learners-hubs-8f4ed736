@@ -56,42 +56,11 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
   };
 
   const getVideoSource = (url: string) => {
-  if (!url) return { type: 'unknown', url: '' };
-
-  // YouTube: watch?v=...
-  const youtubeWatchMatch = url.match(
-    /(?:youtube\.com\/watch\?v=)([^&\s]+)/
-  );
-
-  // YouTube: youtu.be/...
-  const youtubeShortMatch = url.match(
-    /(?:youtu\.be\/)([^?\s]+)/
-  );
-
-  // YouTube: embed/...
-  const youtubeEmbedMatch = url.match(
-    /(?:youtube\.com\/embed\/)([^?\s]+)/
-  );
-
-  // YouTube: shorts/...
-  const youtubeShortsMatch = url.match(
-    /(?:youtube\.com\/shorts\/)([^?\s]+)/
-  );
-
-  const youtubeId =
-    youtubeWatchMatch?.[1] ||
-    youtubeShortMatch?.[1] ||
-    youtubeEmbedMatch?.[1] ||
-    youtubeShortsMatch?.[1];
-
-  if (youtubeId) {
-    return {
-      type: 'youtube',
-      url: `https://www.youtube.com/embed/${youtubeId}?autoplay=0&rel=0`,
-    };
+  if (!url) {
+    return { type: 'unknown', url: '' };
   }
 
-  // Google Drive: /file/d/FILE_ID/view...
+  // Google Drive FIRST
   const driveMatch = url.match(
     /drive\.google\.com\/file\/d\/([^/]+)/
   );
@@ -103,21 +72,35 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     };
   }
 
-  // Already a Google Drive preview URL
-  if (url.includes('drive.google.com') && url.includes('/preview')) {
+  // Google Drive preview URL
+  if (
+    url.includes('drive.google.com') &&
+    url.includes('/preview')
+  ) {
     return {
       type: 'google-drive',
       url,
     };
   }
 
-  // Normal direct video URL
+  // YouTube
+  const youtubeMatch = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/
+  );
+
+  if (youtubeMatch?.[1]) {
+    return {
+      type: 'youtube',
+      url: `https://www.youtube.com/embed/${youtubeMatch[1]}?rel=0`,
+    };
+  }
+
+  // Direct video URL
   return {
     type: 'direct',
     url,
   };
 };
-
   return (
     <div className="p-6 space-y-6">
       {/* Top Header */}
@@ -144,7 +127,9 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 aspect-video relative flex items-center justify-center">
            {(() => {
-  const videoSource = getVideoSource(activeLesson?.videoUrl || '');
+  const videoSource = getVideoSource(
+    activeLesson?.videoUrl || ''
+  );
 
   if (videoSource.type === 'youtube') {
     return (
@@ -170,13 +155,21 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     );
   }
 
+  if (videoSource.type === 'direct') {
+    return (
+      <video
+        controls
+        src={videoSource.url}
+        className="w-full h-full object-cover"
+        playsInline
+      />
+    );
+  }
+
   return (
-    <video
-      controls
-      src={videoSource.url}
-      className="w-full h-full object-cover"
-      playsInline
-    />
+    <div className="text-white text-sm">
+      Video link is missing or invalid.
+    </div>
   );
 })()}
           </div>
