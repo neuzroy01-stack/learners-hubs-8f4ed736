@@ -60,30 +60,70 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     return { type: 'unknown', url: '' };
   }
 
-  // Google Drive FIRST
-  const driveMatch = url.match(
-    /drive\.google\.com\/file\/d\/([^/]+)/
-  );
+  // =========================
+  // GOOGLE DRIVE
+  // =========================
 
-  if (driveMatch?.[1]) {
-    return {
-      type: 'google-drive',
-      url: `https://drive.google.com/file/d/${driveMatch[1]}/preview`,
-    };
+  if (url.includes('drive.google.com')) {
+    let fileId = '';
+
+    // Format:
+    // https://drive.google.com/file/d/FILE_ID/view
+    const fileMatch = url.match(
+      /drive\.google\.com\/file\/d\/([^/?#]+)/
+    );
+
+    if (fileMatch?.[1]) {
+      fileId = fileMatch[1];
+    }
+
+    // Format:
+    // https://drive.google.com/open?id=FILE_ID
+    // https://drive.google.com/uc?id=FILE_ID
+    if (!fileId) {
+      try {
+        const parsedUrl = new URL(url);
+        fileId = parsedUrl.searchParams.get('id') || '';
+      } catch {
+        // Invalid URL
+      }
+    }
+
+    if (fileId) {
+      // Keep resourcekey if the Google Drive sharing link contains one
+      let resourceKey = '';
+
+      try {
+        const parsedUrl = new URL(url);
+        resourceKey =
+          parsedUrl.searchParams.get('resourcekey') || '';
+      } catch {
+        // Ignore invalid URL
+      }
+
+      const previewUrl = resourceKey
+        ? `https://drive.google.com/file/d/${fileId}/preview?resourcekey=${encodeURIComponent(resourceKey)}`
+        : `https://drive.google.com/file/d/${fileId}/preview`;
+
+      return {
+        type: 'google-drive',
+        url: previewUrl,
+      };
+    }
+
+    // Already a Drive preview URL
+    if (url.includes('/preview')) {
+      return {
+        type: 'google-drive',
+        url,
+      };
+    }
   }
 
-  // Google Drive preview URL
-  if (
-    url.includes('drive.google.com') &&
-    url.includes('/preview')
-  ) {
-    return {
-      type: 'google-drive',
-      url,
-    };
-  }
+  // =========================
+  // YOUTUBE
+  // =========================
 
-  // YouTube
   const youtubeMatch = url.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^?&/]+)/
   );
@@ -95,7 +135,10 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
     };
   }
 
-  // Direct video URL
+  // =========================
+  // DIRECT VIDEO
+  // =========================
+
   return {
     type: 'direct',
     url,
@@ -134,12 +177,12 @@ export const VideoPlayerView: React.FC<VideoPlayerViewProps> = ({ course, onBack
   if (videoSource.type === 'youtube') {
     return (
       <iframe
-        src={videoSource.url}
-        title={activeLesson?.title || 'YouTube Video'}
-        className="w-full h-full border-0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowFullScreen
-      />
+  src={videoSource.url}
+  title={activeLesson?.title || 'Google Drive Video'}
+  className="w-full h-full border-0"
+  allow="autoplay; fullscreen; encrypted-media"
+  allowFullScreen
+/>
     );
   }
 
