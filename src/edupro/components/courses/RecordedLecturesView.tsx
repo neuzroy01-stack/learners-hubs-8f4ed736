@@ -1,35 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Video, Plus, Pencil, Trash2, RefreshCw, X, Youtube, TriangleAlert as AlertTriangle } from 'lucide-react';
+import { Video, Plus, Pencil, Trash2, RefreshCw, X, ExternalLink, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { lecturesApi, type CloudLecture } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
+import { resolveVideoSource, isPlayableVideoUrl } from '../../lib/videoUrl';
 
-/**
- * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
- * iframe-embeddable form. YouTube refuses `watch?v=` links inside an iframe.
- */
+/** Kept for backwards compatibility with older imports. */
 export function toYouTubeEmbedUrl(rawUrl: string): string | null {
-  if (!rawUrl) return null;
-  try {
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.replace(/^www\./, '');
-    let id: string | null = null;
-    if (host === 'youtu.be') id = parsed.pathname.slice(1).split('/')[0] || null;
-    else if (host.endsWith('youtube.com')) {
-      if (parsed.pathname === '/watch') id = parsed.searchParams.get('v');
-      else if (/^\/(embed|live|shorts|v)\//.test(parsed.pathname)) id = parsed.pathname.split('/')[2] || null;
-    }
-    return id ? `https://www.youtube.com/embed/${id}?rel=0` : null;
-  } catch {
-    return null;
-  }
+  const s = resolveVideoSource(rawUrl);
+  return s?.kind === 'youtube' ? s.src : null;
 }
 
 export function toYouTubeWatchUrl(rawUrl: string): string | null {
-  const embed = toYouTubeEmbedUrl(rawUrl);
-  const id = embed?.split('/embed/')[1]?.split('?')[0];
-  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+  const s = resolveVideoSource(rawUrl);
+  return s?.kind === 'youtube' ? s.externalUrl : null;
 }
 
 interface FormState {
