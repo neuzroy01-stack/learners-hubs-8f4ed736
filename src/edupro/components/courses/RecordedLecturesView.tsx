@@ -87,8 +87,8 @@ export const RecordedLecturesView: React.FC = () => {
     e.preventDefault();
     if (!form || !activeCourseId) return;
     if (!form.title.trim()) return notify('error', 'Title is required');
-    if (!toYouTubeEmbedUrl(form.video_url)) {
-      return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
+    if (!isPlayableVideoUrl(form.video_url)) {
+      return notify('error', 'Enter a valid video link', 'YouTube (watch / youtu.be / live / shorts) or a Google Drive video link.');
     }
     setSaving(true);
     try {
