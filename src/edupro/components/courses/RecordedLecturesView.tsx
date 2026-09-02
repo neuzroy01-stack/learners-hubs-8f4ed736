@@ -67,8 +67,7 @@ export const RecordedLecturesView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
-  const embedUrl = selected ? toYouTubeEmbedUrl(selected.video_url) : null;
-  const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
+  const source = selected ? resolveVideoSource(selected.video_url) : null;
 
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
