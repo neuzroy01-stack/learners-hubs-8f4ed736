@@ -1,35 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Video, Plus, Pencil, Trash2, RefreshCw, X, Youtube, TriangleAlert as AlertTriangle } from 'lucide-react';
+import { Video, Plus, Pencil, Trash2, RefreshCw, X, ExternalLink, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { lecturesApi, type CloudLecture } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useCourseScope } from '../../hooks/useCourseScope';
 import { useFeedback } from '../common/Feedback';
+import { resolveVideoSource, isPlayableVideoUrl } from '../../lib/videoUrl';
 
-/**
- * Converts any YouTube URL (watch, youtu.be, embed, live, shorts) into the
- * iframe-embeddable form. YouTube refuses `watch?v=` links inside an iframe.
- */
+/** Kept for backwards compatibility with older imports. */
 export function toYouTubeEmbedUrl(rawUrl: string): string | null {
-  if (!rawUrl) return null;
-  try {
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.replace(/^www\./, '');
-    let id: string | null = null;
-    if (host === 'youtu.be') id = parsed.pathname.slice(1).split('/')[0] || null;
-    else if (host.endsWith('youtube.com')) {
-      if (parsed.pathname === '/watch') id = parsed.searchParams.get('v');
-      else if (/^\/(embed|live|shorts|v)\//.test(parsed.pathname)) id = parsed.pathname.split('/')[2] || null;
-    }
-    return id ? `https://www.youtube.com/embed/${id}?rel=0` : null;
-  } catch {
-    return null;
-  }
+  const s = resolveVideoSource(rawUrl);
+  return s?.kind === 'youtube' ? s.src : null;
 }
 
 export function toYouTubeWatchUrl(rawUrl: string): string | null {
-  const embed = toYouTubeEmbedUrl(rawUrl);
-  const id = embed?.split('/embed/')[1]?.split('?')[0];
-  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+  const s = resolveVideoSource(rawUrl);
+  return s?.kind === 'youtube' ? s.externalUrl : null;
 }
 
 interface FormState {
@@ -82,8 +67,7 @@ export const RecordedLecturesView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = weekLectures.find((l) => l.id === selectedId) ?? weekLectures[0] ?? null;
-  const embedUrl = selected ? toYouTubeEmbedUrl(selected.video_url) : null;
-  const watchUrl = selected ? toYouTubeWatchUrl(selected.video_url) : null;
+  const source = selected ? resolveVideoSource(selected.video_url) : null;
 
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -103,8 +87,8 @@ export const RecordedLecturesView: React.FC = () => {
     e.preventDefault();
     if (!form || !activeCourseId) return;
     if (!form.title.trim()) return notify('error', 'Title is required');
-    if (!toYouTubeEmbedUrl(form.video_url)) {
-      return notify('error', 'Enter a valid YouTube link', 'Watch, youtu.be, live and shorts links all work.');
+    if (!isPlayableVideoUrl(form.video_url)) {
+      return notify('error', 'Enter a valid video link', 'YouTube (watch / youtu.be / live / shorts) or a Google Drive video link.');
     }
     setSaving(true);
     try {
@@ -197,10 +181,12 @@ export const RecordedLecturesView: React.FC = () => {
           {selected ? (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="relative aspect-video bg-black">
-                {embedUrl ? (
+                {source && source.kind === 'file' ? (
+                  <video key={source.src} src={source.src} controls playsInline className="h-full w-full" />
+                ) : source ? (
                   <iframe
-                    key={embedUrl}
-                    src={embedUrl}
+                    key={source.src}
+                    src={source.src}
                     title={selected.title}
                     className="h-full w-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -209,15 +195,18 @@ export const RecordedLecturesView: React.FC = () => {
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white">
                     <AlertTriangle className="h-10 w-10 text-amber-500" />
-                    <p className="text-xs text-slate-300">This video link could not be recognised as a YouTube URL.</p>
-                    {watchUrl && (
-                      <a href={watchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold">
-                        <Youtube className="h-4 w-4" /> Open on YouTube
-                      </a>
-                    )}
+                    <p className="text-xs text-slate-300">This video link could not be recognised. Add a YouTube or Google Drive video link.</p>
                   </div>
                 )}
               </div>
+              {source && (
+                <div className="flex items-center justify-between border-t border-slate-100 px-5 py-2 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-800">
+                  <span>{source.kind === 'drive' ? 'Google Drive' : source.kind === 'youtube' ? 'YouTube' : 'Video'}</span>
+                  <a href={source.externalUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-600">
+                    <ExternalLink className="h-3 w-3" /> Open source
+                  </a>
+                </div>
+              )}
               <div className="p-5">
                 <h3 className="text-base font-black text-slate-900 dark:text-white">{selected.title}</h3>
                 {selected.description && <p className="mt-1 text-xs text-slate-500">{selected.description}</p>}
@@ -266,7 +255,7 @@ export const RecordedLecturesView: React.FC = () => {
               <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
             </div>
             <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
-            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" className={inputCls} /></Field>
+            <Field label="Video URL (YouTube or Google Drive)"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="YouTube link or https://drive.google.com/file/d/…/view" className={inputCls} /></Field>
             <Field label="Description"><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Week"><input type="number" min={1} value={form.week_number} onChange={(e) => setForm({ ...form, week_number: Math.max(1, Number(e.target.value) || 1) })} className={inputCls} /></Field>
