@@ -255,7 +255,7 @@ export const RecordedLecturesView: React.FC = () => {
               <button type="button" onClick={() => setForm(null)}><X className="h-4 w-4" /></button>
             </div>
             <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputCls} /></Field>
-            <Field label="YouTube URL"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="https://www.youtube.com/watch?v=…" className={inputCls} /></Field>
+            <Field label="Video URL (YouTube or Google Drive)"><input value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} placeholder="YouTube link or https://drive.google.com/file/d/…/view" className={inputCls} /></Field>
             <Field label="Description"><textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Week"><input type="number" min={1} value={form.week_number} onChange={(e) => setForm({ ...form, week_number: Math.max(1, Number(e.target.value) || 1) })} className={inputCls} /></Field>
