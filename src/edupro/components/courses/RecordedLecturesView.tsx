@@ -181,10 +181,12 @@ export const RecordedLecturesView: React.FC = () => {
           {selected ? (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="relative aspect-video bg-black">
-                {embedUrl ? (
+                {source && source.kind === 'file' ? (
+                  <video key={source.src} src={source.src} controls playsInline className="h-full w-full" />
+                ) : source ? (
                   <iframe
-                    key={embedUrl}
-                    src={embedUrl}
+                    key={source.src}
+                    src={source.src}
                     title={selected.title}
                     className="h-full w-full border-0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -193,15 +195,18 @@ export const RecordedLecturesView: React.FC = () => {
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white">
                     <AlertTriangle className="h-10 w-10 text-amber-500" />
-                    <p className="text-xs text-slate-300">This video link could not be recognised as a YouTube URL.</p>
-                    {watchUrl && (
-                      <a href={watchUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold">
-                        <Youtube className="h-4 w-4" /> Open on YouTube
-                      </a>
-                    )}
+                    <p className="text-xs text-slate-300">This video link could not be recognised. Add a YouTube or Google Drive video link.</p>
                   </div>
                 )}
               </div>
+              {source && (
+                <div className="flex items-center justify-between border-t border-slate-100 px-5 py-2 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-800">
+                  <span>{source.kind === 'drive' ? 'Google Drive' : source.kind === 'youtube' ? 'YouTube' : 'Video'}</span>
+                  <a href={source.externalUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-600">
+                    <ExternalLink className="h-3 w-3" /> Open source
+                  </a>
+                </div>
+              )}
               <div className="p-5">
                 <h3 className="text-base font-black text-slate-900 dark:text-white">{selected.title}</h3>
                 {selected.description && <p className="mt-1 text-xs text-slate-500">{selected.description}</p>}
