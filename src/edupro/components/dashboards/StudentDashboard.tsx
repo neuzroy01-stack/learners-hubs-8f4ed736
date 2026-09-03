@@ -28,13 +28,18 @@ interface StudentDashboardProps {
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCourse, onNavigateTab }) => {
   const { currentUser, studentProfile } = useAuth();
   const [showPaymentProofModal, setShowPaymentProofModal] = useState(false);
-  const [uploadAmount, setUploadAmount] = useState('8000');
-  const [uploadUtr, setUploadUtr] = useState('UPI/9839100122/PAY');
   const [selectedCertificate, setSelectedCertificate] = useState<any | null>(null);
 
   const student = studentProfile || db.getStudents()[0];
   const enrollments = db.getEnrollments().filter((e) => e.studentId === student.id);
-  const feeSummary = db.getFeeSummaryForStudent(student.id);
+
+  // Fees always come from the database for the signed-in student only.
+  const uid = currentUser?.id ?? '';
+  const { data: finance, loading: financeLoading, reload: reloadFinance } = useCloudQuery(
+    async () => (uid ? studentFinance(uid) : null),
+    [uid],
+  );
+  const pendingFee = finance?.outstanding ?? 0;
 
   const courses = db.getCourses();
   const enrolledCourses = courses.filter((c) => enrollments.some((e) => e.courseId === c.id));
