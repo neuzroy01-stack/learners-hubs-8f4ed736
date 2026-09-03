@@ -153,18 +153,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className={`text-2xl font-black ${feeSummary.remainingAmount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-            {settings.currencySymbol}{feeSummary.remainingAmount.toLocaleString()}
+          <div className={`text-2xl font-black ${pendingFee > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {financeLoading ? '…' : `${settings.currencySymbol}${pendingFee.toLocaleString('en-IN')}`}
           </div>
-          {feeSummary.remainingAmount > 0 ? (
+          {pendingFee > 0 ? (
             <button
               onClick={() => setShowPaymentProofModal(true)}
               className="text-[11px] font-bold text-blue-600 hover:underline mt-1 block"
             >
-              Upload Payment Receipt Proof →
+              Pay Pending Fees →
             </button>
           ) : (
-            <div className="text-[11px] text-emerald-600 font-bold mt-1">Fees Fully Settled</div>
+            <div className="text-[11px] text-emerald-600 font-bold mt-1">{financeLoading ? 'Loading…' : 'Fees Fully Settled'}</div>
           )}
         </div>
 
