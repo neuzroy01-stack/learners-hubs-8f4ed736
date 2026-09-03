@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CreditCard, RefreshCw } from 'lucide-react';
 import { studentFinance } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useAuth } from '../../context/AuthContext';
+import { PayFeeModal } from './PayFeeModal';
 
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
@@ -11,6 +12,7 @@ export const MyCloudFeesView: React.FC = () => {
   const { currentUser } = useAuth();
   const uid = currentUser?.id ?? '';
   const { data, loading, error, reload } = useCloudQuery(async () => (uid ? studentFinance(uid) : null), [uid]);
+  const [payOpen, setPayOpen] = useState(false);
 
   if (!uid) return <p className="p-6 text-sm text-slate-500">Sign in to view your fees.</p>;
 
