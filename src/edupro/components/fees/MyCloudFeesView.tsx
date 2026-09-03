@@ -88,6 +88,8 @@ export const MyCloudFeesView: React.FC = () => {
           </section>
         </>
       )}
+
+      {payOpen && <PayFeeModal onClose={() => setPayOpen(false)} onSubmitted={() => void reload()} />}
     </div>
   );
 };
