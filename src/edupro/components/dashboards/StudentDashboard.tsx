@@ -4,6 +4,9 @@ import { db } from '../../services/db';
 import { Course, LiveClass, Assignment, Quiz } from '../../types/lms';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { CertificateModal } from '../common/CertificateModal';
+import { PayFeeModal } from '../fees/PayFeeModal';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { studentFinance } from '../../services/cloudDb';
 import {
   GraduationCap,
   PlayCircle,
@@ -52,32 +55,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
   const quizzes = db.getQuizzes();
   const certificates = db.getCertificates().filter((c) => c.studentId === student.id);
   const settings = db.getSettings();
-
-  const handleUploadPaymentProof = (e: React.FormEvent) => {
-    e.preventDefault();
-    const enrollment = enrollments[0];
-    if (!enrollment) return;
-
-    db.recordPayment({
-      id: `pay-${Date.now()}`,
-      enrollmentId: enrollment.id,
-      studentId: student.id,
-      studentName: student.fullName,
-      courseTitle: enrollment.courseTitle,
-      receiptNumber: `RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      amount: Number(uploadAmount),
-      paymentDate: new Date().toISOString().split('T')[0],
-      paymentMode: 'UPI',
-      transactionId: uploadUtr,
-      screenshotUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600',
-      status: 'pending_verification',
-      remarks: 'Student uploaded transaction receipt proof',
-      recordedBy: `${student.fullName} (Student)`
-    });
-
-    db.logActivity(currentUser?.id || student.userId, student.fullName, 'student', 'UPLOAD_PAYMENT_PROOF', 'Fee Ledger', `Uploaded payment proof of ${uploadAmount}`);
-    setShowPaymentProofModal(false);
-  };
 
   return (
     <div className="p-6 space-y-6">
