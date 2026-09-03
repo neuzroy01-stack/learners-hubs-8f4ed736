@@ -239,64 +239,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
         </div>
       )}
 
-      {/* Upload Payment Proof Modal */}
+      {/* Fee payment (UPI QR + UTR, verified by admin) */}
       {showPaymentProofModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Upload Fee Payment Proof</h3>
-            <p className="text-xs text-slate-500">
-              Upload UTR transaction reference number and screenshot proof for Academic Admin verification.
-            </p>
-
-            <form onSubmit={handleUploadPaymentProof} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount Paid ({settings.currencySymbol})</label>
-                <input
-                  type="number"
-                  value={uploadAmount}
-                  onChange={(e) => setUploadAmount(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">UTR / Bank Transaction Reference</label>
-                <input
-                  type="text"
-                  value={uploadUtr}
-                  onChange={(e) => setUploadUtr(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Upload Payment Screenshot / Receipt</label>
-                <input
-                  type="file"
-                  className="w-full p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentProofModal(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
-                >
-                  Submit Payment Proof
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <PayFeeModal
+          onClose={() => setShowPaymentProofModal(false)}
+          onSubmitted={() => void reloadFinance()}
+        />
       )}
 
       {/* Certificate Modal */}
