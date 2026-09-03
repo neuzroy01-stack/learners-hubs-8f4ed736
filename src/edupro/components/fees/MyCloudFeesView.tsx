@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CreditCard, RefreshCw } from 'lucide-react';
 import { studentFinance } from '../../services/cloudDb';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
 import { useAuth } from '../../context/AuthContext';
+import { PayFeeModal } from './PayFeeModal';
 
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
@@ -11,6 +12,7 @@ export const MyCloudFeesView: React.FC = () => {
   const { currentUser } = useAuth();
   const uid = currentUser?.id ?? '';
   const { data, loading, error, reload } = useCloudQuery(async () => (uid ? studentFinance(uid) : null), [uid]);
+  const [payOpen, setPayOpen] = useState(false);
 
   if (!uid) return <p className="p-6 text-sm text-slate-500">Sign in to view your fees.</p>;
 
@@ -20,9 +22,16 @@ export const MyCloudFeesView: React.FC = () => {
         <h1 className="flex items-center gap-2 text-xl font-black text-slate-900 dark:text-white">
           <CreditCard className="h-5 w-5 text-blue-600" /> My Fees
         </h1>
-        <button onClick={() => void reload()} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {(data?.outstanding ?? 0) > 0 && (
+            <button onClick={() => setPayOpen(true)} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+              Pay Pending Fees {money(data!.outstanding)}
+            </button>
+          )}
+          <button onClick={() => void reload()} className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-700">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </header>
 
       {error && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
@@ -79,6 +88,8 @@ export const MyCloudFeesView: React.FC = () => {
           </section>
         </>
       )}
+
+      {payOpen && <PayFeeModal onClose={() => setPayOpen(false)} onSubmitted={() => void reload()} />}
     </div>
   );
 };

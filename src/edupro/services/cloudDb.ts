@@ -562,3 +562,95 @@ export const studentEnrollments = async (studentId: string) => {
   const rows = await enrollmentsApi.listByStudent(studentId);
   return rows.map((r) => ({ id: r.id, course_id: r.course_id, title: r.courses?.title ?? 'Course' }));
 };
+
+/* ---------------- QUIZZES / EXAMS ---------------- */
+export type CloudQuiz = Tables['quizzes']['Row'];
+export type CloudQuizQuestion = Tables['quiz_questions']['Row'];
+export type CloudQuizAttempt = Tables['quiz_attempts']['Row'];
+/** Question as delivered to a student: no correct answer exposed. */
+export type ExamPaperQuestion = {
+  id: string;
+  prompt: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  marks: number;
+  sort_order: number;
+};
+
+export const quizzesApi = {
+  async listByCourses(courseIds: string[]) {
+    if (!courseIds.length) return [] as CloudQuiz[];
+    return unwrap(
+      await supabase.from('quizzes').select('*').in('course_id', courseIds).order('created_at', { ascending: false })
+    ) as CloudQuiz[];
+  },
+  async create(input: Tables['quizzes']['Insert']) {
+    const row = unwrap(await supabase.from('quizzes').insert(input).select().single()) as CloudQuiz;
+    await logAudit('CREATE', 'quiz', row.id, null, row);
+    return row;
+  },
+  async update(id: string, patch: Tables['quizzes']['Update']) {
+    const row = unwrap(await supabase.from('quizzes').update(patch).eq('id', id).select().single()) as CloudQuiz;
+    await logAudit('UPDATE', 'quiz', id, null, patch);
+    return row;
+  },
+  async remove(id: string) {
+    const { error } = await supabase.from('quizzes').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    await logAudit('DELETE', 'quiz', id);
+  },
+
+  /* questions — staff only (RLS) */
+  async questions(quizId: string) {
+    return unwrap(
+      await supabase.from('quiz_questions').select('*').eq('quiz_id', quizId).order('sort_order')
+    ) as CloudQuizQuestion[];
+  },
+  async saveQuestion(input: Tables['quiz_questions']['Insert'] & { id?: string }) {
+    const { id, ...rest } = input;
+    if (id) {
+      return unwrap(
+        await supabase.from('quiz_questions').update(rest).eq('id', id).select().single()
+      ) as CloudQuizQuestion;
+    }
+    return unwrap(await supabase.from('quiz_questions').insert(rest).select().single()) as CloudQuizQuestion;
+  },
+  async removeQuestion(id: string) {
+    const { error } = await supabase.from('quiz_questions').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+
+  /* attempts */
+  async attemptsByStudent(studentId: string) {
+    return unwrap(
+      await supabase.from('quiz_attempts').select('*').eq('student_id', studentId)
+    ) as CloudQuizAttempt[];
+  },
+  async attemptsByQuiz(quizId: string) {
+    return unwrap(
+      await supabase.from('quiz_attempts').select('*').eq('quiz_id', quizId)
+    ) as CloudQuizAttempt[];
+  },
+  /** Exam paper without answer keys (server-side security definer). */
+  async paper(quizId: string) {
+    const { data, error } = await supabase.rpc('quiz_paper', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ExamPaperQuestion[];
+  },
+  async start(quizId: string) {
+    const { data, error } = await supabase.rpc('start_quiz_attempt', { _quiz_id: quizId });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+  async saveAnswers(attemptId: string, answers: Record<string, string>) {
+    const { error } = await supabase.rpc('save_quiz_answers', { _attempt_id: attemptId, _answers: answers });
+    if (error) throw new Error(error.message);
+  },
+  async submit(attemptId: string, answers: Record<string, string>) {
+    const { data, error } = await supabase.rpc('submit_quiz_attempt', { _attempt_id: attemptId, _answers: answers });
+    if (error) throw new Error(error.message);
+    return data as unknown as CloudQuizAttempt;
+  },
+};

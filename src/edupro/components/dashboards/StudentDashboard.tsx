@@ -4,6 +4,9 @@ import { db } from '../../services/db';
 import { Course, LiveClass, Assignment, Quiz } from '../../types/lms';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { CertificateModal } from '../common/CertificateModal';
+import { PayFeeModal } from '../fees/PayFeeModal';
+import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { studentFinance } from '../../services/cloudDb';
 import {
   GraduationCap,
   PlayCircle,
@@ -28,13 +31,18 @@ interface StudentDashboardProps {
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCourse, onNavigateTab }) => {
   const { currentUser, studentProfile } = useAuth();
   const [showPaymentProofModal, setShowPaymentProofModal] = useState(false);
-  const [uploadAmount, setUploadAmount] = useState('8000');
-  const [uploadUtr, setUploadUtr] = useState('UPI/9839100122/PAY');
   const [selectedCertificate, setSelectedCertificate] = useState<any | null>(null);
 
   const student = studentProfile || db.getStudents()[0];
   const enrollments = db.getEnrollments().filter((e) => e.studentId === student.id);
-  const feeSummary = db.getFeeSummaryForStudent(student.id);
+
+  // Fees always come from the database for the signed-in student only.
+  const uid = currentUser?.id ?? '';
+  const { data: finance, loading: financeLoading, reload: reloadFinance } = useCloudQuery(
+    async () => (uid ? studentFinance(uid) : null),
+    [uid],
+  );
+  const pendingFee = finance?.outstanding ?? 0;
 
   const courses = db.getCourses();
   const enrolledCourses = courses.filter((c) => enrollments.some((e) => e.courseId === c.id));
@@ -47,32 +55,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
   const quizzes = db.getQuizzes();
   const certificates = db.getCertificates().filter((c) => c.studentId === student.id);
   const settings = db.getSettings();
-
-  const handleUploadPaymentProof = (e: React.FormEvent) => {
-    e.preventDefault();
-    const enrollment = enrollments[0];
-    if (!enrollment) return;
-
-    db.recordPayment({
-      id: `pay-${Date.now()}`,
-      enrollmentId: enrollment.id,
-      studentId: student.id,
-      studentName: student.fullName,
-      courseTitle: enrollment.courseTitle,
-      receiptNumber: `RCP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      amount: Number(uploadAmount),
-      paymentDate: new Date().toISOString().split('T')[0],
-      paymentMode: 'UPI',
-      transactionId: uploadUtr,
-      screenshotUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600',
-      status: 'pending_verification',
-      remarks: 'Student uploaded transaction receipt proof',
-      recordedBy: `${student.fullName} (Student)`
-    });
-
-    db.logActivity(currentUser?.id || student.userId, student.fullName, 'student', 'UPLOAD_PAYMENT_PROOF', 'Fee Ledger', `Uploaded payment proof of ${uploadAmount}`);
-    setShowPaymentProofModal(false);
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -153,18 +135,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
-          <div className={`text-2xl font-black ${feeSummary.remainingAmount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-            {settings.currencySymbol}{feeSummary.remainingAmount.toLocaleString()}
+          <div className={`text-2xl font-black ${pendingFee > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {financeLoading ? '…' : `${settings.currencySymbol}${pendingFee.toLocaleString('en-IN')}`}
           </div>
-          {feeSummary.remainingAmount > 0 ? (
+          {pendingFee > 0 ? (
             <button
               onClick={() => setShowPaymentProofModal(true)}
               className="text-[11px] font-bold text-blue-600 hover:underline mt-1 block"
             >
-              Upload Payment Receipt Proof →
+              Pay Pending Fees →
             </button>
           ) : (
-            <div className="text-[11px] text-emerald-600 font-bold mt-1">Fees Fully Settled</div>
+            <div className="text-[11px] text-emerald-600 font-bold mt-1">{financeLoading ? 'Loading…' : 'Fees Fully Settled'}</div>
           )}
         </div>
 
@@ -239,64 +221,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
         </div>
       )}
 
-      {/* Upload Payment Proof Modal */}
+      {/* Fee payment (UPI QR + UTR, verified by admin) */}
       {showPaymentProofModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Upload Fee Payment Proof</h3>
-            <p className="text-xs text-slate-500">
-              Upload UTR transaction reference number and screenshot proof for Academic Admin verification.
-            </p>
-
-            <form onSubmit={handleUploadPaymentProof} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount Paid ({settings.currencySymbol})</label>
-                <input
-                  type="number"
-                  value={uploadAmount}
-                  onChange={(e) => setUploadAmount(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">UTR / Bank Transaction Reference</label>
-                <input
-                  type="text"
-                  value={uploadUtr}
-                  onChange={(e) => setUploadUtr(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Upload Payment Screenshot / Receipt</label>
-                <input
-                  type="file"
-                  className="w-full p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentProofModal(false)}
-                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
-                >
-                  Submit Payment Proof
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <PayFeeModal
+          onClose={() => setShowPaymentProofModal(false)}
+          onSubmitted={() => void reloadFinance()}
+        />
       )}
 
       {/* Certificate Modal */}
