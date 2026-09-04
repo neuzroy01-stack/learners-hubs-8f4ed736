@@ -23,6 +23,7 @@ import { PaymentApprovalView } from './components/fees/PaymentApprovalView';
 import { MyCloudFeesView } from './components/fees/MyCloudFeesView';
 import { RecordedLecturesView } from './components/courses/RecordedLecturesView';
 import { AssignmentsView } from './components/assignments/AssignmentsView';
+import { ExamsView } from './components/exams/ExamsView';
 import { AttendanceView } from './components/attendance/AttendanceView';
 import { FreeDownloadsView } from './components/downloads/FreeDownloadsView';
 import { HelpSupportView } from './components/support/HelpSupportView';
@@ -105,6 +106,9 @@ const MainAppContent: React.FC = () => {
       case 'assignments_quizzes':
       case 'academics':
         return <AssignmentsView />;
+
+      case 'exams':
+        return <ExamsView />;
 
       case 'attendance':
       case 'attendance_marker':
