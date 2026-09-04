@@ -1,5 +1,5 @@
 import React from 'react';
-import { Award, CircleCheck as CheckCircle2, Circle as XCircle, ArrowLeft } from 'lucide-react';
+import { Award, CheckCircle2, XCircle, ArrowLeft } from 'lucide-react';
 import type { CloudQuiz, CloudQuizAttempt } from '../../services/cloudDb';
 
 interface Props {
