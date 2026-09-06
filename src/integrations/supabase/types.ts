@@ -487,42 +487,98 @@ export type Database = {
           },
         ]
       }
+      notification_reads: {
+        Row: {
+          created_at: string
+          id: string
+          notification_id: string
+          read_at: string
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notification_id: string
+          read_at?: string
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notification_id?: string
+          read_at?: string
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_reads_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           body: string | null
           course_id: string | null
           created_at: string
+          created_by: string | null
+          created_by_role: string | null
+          deleted_at: string | null
+          expires_at: string | null
           id: string
+          is_active: boolean
           is_read: boolean
           link: string | null
+          start_at: string
+          student_id: string | null
+          target_type: string
           title: string
           type: string
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           body?: string | null
           course_id?: string | null
           created_at?: string
+          created_by?: string | null
+          created_by_role?: string | null
+          deleted_at?: string | null
+          expires_at?: string | null
           id?: string
+          is_active?: boolean
           is_read?: boolean
           link?: string | null
+          start_at?: string
+          student_id?: string | null
+          target_type?: string
           title: string
           type?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           body?: string | null
           course_id?: string | null
           created_at?: string
+          created_by?: string | null
+          created_by_role?: string | null
+          deleted_at?: string | null
+          expires_at?: string | null
           id?: string
+          is_active?: boolean
           is_read?: boolean
           link?: string | null
+          start_at?: string
+          student_id?: string | null
+          target_type?: string
           title?: string
           type?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
