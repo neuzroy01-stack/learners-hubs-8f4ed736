@@ -361,19 +361,91 @@ export const paymentsApi = {
 };
 
 /* ---------------- NOTIFICATIONS ---------------- */
+export type CloudNotificationRead = Tables['notification_reads']['Row'];
+
+export type NotificationWithRead = CloudNotification & { read: boolean };
+
 export const notificationsApi = {
-  async listForUser(userId: string) {
+  /** Every notification the signed-in student may see. RLS enforces the same rules. */
+  async listForStudent(userId: string): Promise<NotificationWithRead[]> {
+    const nowIso = new Date().toISOString();
+    const rows = unwrap(
+      await supabase
+        .from('notifications')
+        .select('*')
+        .is('deleted_at', null)
+        .eq('is_active', true)
+        .lte('start_at', nowIso)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .order('created_at', { ascending: false })
+        .limit(200)
+    ) as CloudNotification[];
+
+    const reads = unwrap(
+      await supabase.from('notification_reads').select('notification_id').eq('student_id', userId)
+    ) as { notification_id: string }[];
+    const readSet = new Set(reads.map((r) => r.notification_id));
+    return rows.map((n) => ({ ...n, read: readSet.has(n.id) }));
+  },
+
+  /** Full management list for staff (includes inactive; hides soft-deleted). */
+  async listAll(): Promise<CloudNotification[]> {
     return unwrap(
-      await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(100)
+      await supabase
+        .from('notifications')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(500)
     ) as CloudNotification[];
   },
-  async send(rows: Tables['notifications']['Insert'][]) {
-    return unwrap(await supabase.from('notifications').insert(rows).select()) as CloudNotification[];
+
+  async create(input: Tables['notifications']['Insert']) {
+    const row = unwrap(
+      await supabase.from('notifications').insert(input).select().single()
+    ) as CloudNotification;
+    await logAudit('CREATE', 'notification', row.id, null, row);
+    return row;
   },
-  async markRead(id: string) {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+
+  async update(id: string, patch: Tables['notifications']['Update']) {
+    const row = unwrap(
+      await supabase.from('notifications').update(patch).eq('id', id).select().single()
+    ) as CloudNotification;
+    await logAudit('UPDATE', 'notification', id, null, patch);
+    return row;
+  },
+
+  async setActive(id: string, isActive: boolean) {
+    return notificationsApi.update(id, { is_active: isActive });
+  },
+
+  /** Soft delete keeps the audit history intact. */
+  async softDelete(id: string) {
+    return notificationsApi.update(id, { deleted_at: new Date().toISOString(), is_active: false });
+  },
+
+  async markRead(notificationId: string, studentId: string) {
+    const { error } = await supabase
+      .from('notification_reads')
+      .upsert(
+        { notification_id: notificationId, student_id: studentId, read_at: new Date().toISOString() },
+        { onConflict: 'notification_id,student_id' }
+      );
+    if (error) throw new Error(error.message);
+  },
+
+  async markAllRead(notificationIds: string[], studentId: string) {
+    if (!notificationIds.length) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('notification_reads').upsert(
+      notificationIds.map((notification_id) => ({ notification_id, student_id: studentId, read_at: now })),
+      { onConflict: 'notification_id,student_id' }
+    );
+    if (error) throw new Error(error.message);
   },
 };
+
 
 /* ---------------- AUDIT LOGS ---------------- */
 export const auditApi = {
