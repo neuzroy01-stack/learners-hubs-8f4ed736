@@ -35,6 +35,9 @@ import { AccountsManagementView } from './components/accounts/AccountsManagement
 
 import { ReportsAnalyticsView } from './components/analytics/ReportsAnalyticsView';
 import { SettingsView } from './components/settings/SettingsView';
+import { NotificationsView } from './components/notifications/NotificationsView';
+import { NotificationManagerView } from './components/notifications/NotificationManagerView';
+
 
 import { Course, StudentProfile } from './types/lms';
 import { db } from './services/db';
@@ -137,6 +140,9 @@ const MainAppContent: React.FC = () => {
       case 'my_salary':
         return <FeeManagementView />;
 
+      case 'notifications':
+        return currentRole === 'student' ? <NotificationsView /> : <NotificationManagerView />;
+
       case 'reports':
         return <ReportsAnalyticsView />;
 
@@ -144,6 +150,7 @@ const MainAppContent: React.FC = () => {
       case 'policies':
       case 'audit_logs':
         return <SettingsView />;
+
 
       default:
         if (currentRole === 'super_admin') return <SuperAdminDashboard />;
