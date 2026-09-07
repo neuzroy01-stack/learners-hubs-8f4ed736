@@ -117,26 +117,41 @@ export const Navbar: React.FC<{ onOpenMobileMenu?: () => void; onOpenNotificatio
                 <span className="text-[10px] text-slate-500 font-semibold">{notifications.length} Total</span>
               </div>
               <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                {notifications.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-400">No new notifications</div>
+                {notifLoading ? (
+                  <div className="p-6 text-center text-xs text-slate-400">Loading…</div>
+                ) : notifications.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    🔔 No notifications
+                    <div className="mt-1 text-[11px]">You&apos;re all caught up!</div>
+                  </div>
                 ) : (
-                  notifications.map((n) => (
+                  notifications.slice(0, 8).map((n) => (
                     <div
                       key={n.id}
-                      onClick={() => db.markNotificationRead(n.id)}
+                      onClick={() => void markRead(n.id)}
                       className={`p-3 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${
-                        !n.isRead ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
+                        !n.read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
                       }`}
                     >
                       <div className="font-bold text-slate-900 dark:text-white mb-0.5">{n.title}</div>
-                      <div className="text-slate-600 dark:text-slate-300 text-[11px] leading-snug">{n.message}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">{new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      <div className="text-slate-600 dark:text-slate-300 text-[11px] leading-snug whitespace-pre-wrap">{n.body}</div>
+                      <div className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</div>
                     </div>
                   ))
                 )}
               </div>
+              <button
+                onClick={() => {
+                  setShowNotifMenu(false);
+                  onOpenNotifications?.();
+                }}
+                className="w-full p-3 text-xs font-bold text-blue-600 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800"
+              >
+                View All Notifications
+              </button>
             </div>
           )}
+
         </div>
 
         {/* User Profile Menu */}
