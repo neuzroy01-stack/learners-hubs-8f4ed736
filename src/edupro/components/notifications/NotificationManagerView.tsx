@@ -106,10 +106,10 @@ export const NotificationManagerView: React.FC = () => {
     try {
       if (editing) {
         await notificationsApi.update(editing.id, payload);
-        feedback.success('Notification updated successfully.');
+        feedback.notify('success', 'Notification updated successfully.');
       } else {
         await notificationsApi.create(payload);
-        feedback.success('Notification created successfully.');
+        feedback.notify('success', 'Notification created successfully.');
       }
       setShowForm(false);
       await reload();
@@ -123,10 +123,10 @@ export const NotificationManagerView: React.FC = () => {
   const toggle = async (n: CloudNotification) => {
     try {
       await notificationsApi.setActive(n.id, !n.is_active);
-      feedback.success(n.is_active ? 'Notification deactivated.' : 'Notification activated.');
+      feedback.notify('success', n.is_active ? 'Notification deactivated.' : 'Notification activated.');
       await reload();
     } catch (e) {
-      feedback.error(e instanceof Error ? e.message : 'Could not update notification.');
+      feedback.notify('error', e instanceof Error ? e.message : 'Could not update notification.');
     }
   };
 
@@ -134,10 +134,10 @@ export const NotificationManagerView: React.FC = () => {
     if (!window.confirm(`Delete notification "${n.title}"? Students will stop seeing it.`)) return;
     try {
       await notificationsApi.softDelete(n.id);
-      feedback.success('Notification deleted.');
+      feedback.notify('success', 'Notification deleted.');
       await reload();
     } catch (e) {
-      feedback.error(e instanceof Error ? e.message : 'Could not delete notification.');
+      feedback.notify('error', e instanceof Error ? e.message : 'Could not delete notification.');
     }
   };
 
