@@ -22,7 +22,8 @@ import {
   ArrowRight,
   Upload,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 
 interface StudentDashboardProps {
@@ -45,6 +46,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
     [uid],
   );
   const pendingFee = finance?.outstanding ?? 0;
+
+  const {
+    items: notifItems,
+    unreadCount: notifUnread,
+    loading: notifLoading,
+    markRead: markNotifRead,
+  } = useNotifications();
 
   const courses = db.getCourses();
   const enrolledCourses = courses.filter((c) => enrollments.some((e) => e.courseId === c.id));
