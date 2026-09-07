@@ -48,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'payment_verify', label: 'Payment Verification', icon: FileCheck },
           { id: 'salary', label: 'Staff Salaries', icon: DollarSign },
           { id: 'exams', label: 'Exams & Tests', icon: Award },
+          { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
           { id: 'policies', label: 'Policies & Consent', icon: FileText },
           { id: 'audit_logs', label: 'Audit Trail Logs', icon: Shield },
@@ -68,6 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'attendance', label: 'Attendance Matrix', icon: FileSpreadsheet },
           { id: 'academics', label: 'Assignments & Quizzes', icon: Award },
           { id: 'exams', label: 'Exams & Tests', icon: Award },
+          { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'reports', label: 'Reports Generator', icon: BarChart3 },
           { id: 'settings', label: 'Institute Config', icon: Settings }
         ];
@@ -82,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'study_materials', label: 'Study Materials', icon: FolderDown },
           { id: 'assignments', label: 'Assignment Reviewer', icon: FileCheck },
           { id: 'exams', label: 'Exams & Tests', icon: Award },
+          { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'my_salary', label: 'Salary Ledger', icon: DollarSign }
         ];
 
@@ -97,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, mobil
           { id: 'downloads', label: 'Study Downloads', icon: FolderDown },
           { id: 'my_fees', label: 'Fee Ledger & Proof', icon: CreditCard },
           { id: 'certificates', label: 'My Certificates', icon: Award },
+          { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'help', label: 'Help & Support', icon: HelpCircle }
         ];
 

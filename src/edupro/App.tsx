@@ -166,7 +166,14 @@ const MainAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors overflow-x-hidden">
-      <Navbar onOpenMobileMenu={() => setMobileNavOpen(true)} />
+      <Navbar
+        onOpenMobileMenu={() => setMobileNavOpen(true)}
+        onOpenNotifications={() => {
+          setSelectedCourseForLearning(null);
+          setActiveTab('notifications');
+        }}
+      />
+
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
