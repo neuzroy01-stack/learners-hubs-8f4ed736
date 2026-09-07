@@ -6,7 +6,9 @@ import { ReceiptModal } from '../common/ReceiptModal';
 import { CertificateModal } from '../common/CertificateModal';
 import { PayFeeModal } from '../fees/PayFeeModal';
 import { useCloudQuery } from '../../hooks/useCloudQuery';
+import { useNotifications, timeAgo } from '../../hooks/useNotifications';
 import { studentFinance } from '../../services/cloudDb';
+
 import {
   GraduationCap,
   PlayCircle,
@@ -162,7 +164,54 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectCour
         </div>
       </div>
 
+      {/* Notifications from the database (admin / teacher announcements) */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Bell className="w-4 h-4 text-blue-600" /> Notifications
+            {notifUnread > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                {notifUnread} New
+              </span>
+            )}
+          </h3>
+          <button onClick={() => onNavigateTab('notifications')} className="text-[11px] font-bold text-blue-600 hover:underline">
+            View All →
+          </button>
+        </div>
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {notifLoading ? (
+            <div className="p-6 text-center text-xs text-slate-400">Loading…</div>
+          ) : notifItems.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">🔔 No notifications</p>
+              <p className="text-xs text-slate-400 mt-1">You&apos;re all caught up!</p>
+            </div>
+          ) : (
+            notifItems.slice(0, 5).map((n) => (
+              <button
+                key={n.id}
+                onClick={() => void markNotifRead(n.id)}
+                className={`w-full text-left p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${
+                  !n.read ? 'bg-blue-50/60 dark:bg-blue-950/20' : ''
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${!n.read ? 'bg-rose-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white">{n.title}</p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{n.body}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* Enrolled Course & Syllabus Roadmap View */}
+
       {activeCourse && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
