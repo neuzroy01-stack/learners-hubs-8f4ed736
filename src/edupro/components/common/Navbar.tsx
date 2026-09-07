@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { db } from '../../services/db';
+import { useNotifications, timeAgo } from '../../hooks/useNotifications';
 import {
   Search,
   Bell,
@@ -16,15 +17,18 @@ import {
   Menu,
 } from 'lucide-react';
 
-export const Navbar: React.FC<{ onOpenMobileMenu?: () => void }> = ({ onOpenMobileMenu }) => {
+export const Navbar: React.FC<{ onOpenMobileMenu?: () => void; onOpenNotifications?: () => void }> = ({
+  onOpenMobileMenu,
+  onOpenNotifications,
+}) => {
   const { currentUser, currentRole, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const settings = db.getSettings();
-  const notifications = currentUser ? db.getNotifications(currentUser.id) : [];
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const { items: notifications, unreadCount, loading: notifLoading, markRead } = useNotifications();
+
 
   const getRoleBadge = (role: string) => {
     switch (role) {
