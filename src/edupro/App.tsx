@@ -35,6 +35,9 @@ import { AccountsManagementView } from './components/accounts/AccountsManagement
 
 import { ReportsAnalyticsView } from './components/analytics/ReportsAnalyticsView';
 import { SettingsView } from './components/settings/SettingsView';
+import { NotificationsView } from './components/notifications/NotificationsView';
+import { NotificationManagerView } from './components/notifications/NotificationManagerView';
+
 
 import { Course, StudentProfile } from './types/lms';
 import { db } from './services/db';
@@ -137,6 +140,9 @@ const MainAppContent: React.FC = () => {
       case 'my_salary':
         return <FeeManagementView />;
 
+      case 'notifications':
+        return currentRole === 'student' ? <NotificationsView /> : <NotificationManagerView />;
+
       case 'reports':
         return <ReportsAnalyticsView />;
 
@@ -144,6 +150,7 @@ const MainAppContent: React.FC = () => {
       case 'policies':
       case 'audit_logs':
         return <SettingsView />;
+
 
       default:
         if (currentRole === 'super_admin') return <SuperAdminDashboard />;
@@ -159,7 +166,14 @@ const MainAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors overflow-x-hidden">
-      <Navbar onOpenMobileMenu={() => setMobileNavOpen(true)} />
+      <Navbar
+        onOpenMobileMenu={() => setMobileNavOpen(true)}
+        onOpenNotifications={() => {
+          setSelectedCourseForLearning(null);
+          setActiveTab('notifications');
+        }}
+      />
+
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
